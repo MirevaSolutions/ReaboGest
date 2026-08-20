@@ -49,7 +49,9 @@ function App() {
 
   return (
     <Layout current={page} onNavigate={handleNavigate}>
-      {renderPage()}
+      <div key={page + (selectedClientId ?? '')} className="h-full">
+        {renderPage()}
+      </div>
     </Layout>
   );
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Check, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, Check, X, CheckCircle2, AlertCircle } from 'lucide-react';
 import { supabase, type Formula } from '@/lib/supabase';
 import { formatPrice } from '@/lib/status';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -14,6 +14,13 @@ export default function ParametresPage() {
   const [addPrix, setAddPrix] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Formula | null>(null);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const fetchFormulas = useCallback(async () => {
     setLoading(true);
@@ -52,9 +59,11 @@ export default function ParametresPage() {
       .eq('id', id);
     if (error) {
       console.error(error);
+      setToast({ type: 'error', msg: 'Erreur lors de la modification.' });
     } else {
       setEditingId(null);
       await fetchFormulas();
+      setToast({ type: 'success', msg: 'Formule modifiée avec succès.' });
     }
   };
 
@@ -65,8 +74,10 @@ export default function ParametresPage() {
       .eq('id', f.id);
     if (error) {
       console.error(error);
+      setToast({ type: 'error', msg: 'Erreur lors du changement de statut.' });
     } else {
       await fetchFormulas();
+      setToast({ type: 'success', msg: 'Statut de la formule mis à jour.' });
     }
   };
 
@@ -93,6 +104,7 @@ export default function ParametresPage() {
       setAddPrix('');
       setAddError(null);
       await fetchFormulas();
+      setToast({ type: 'success', msg: 'Formule ajoutée avec succès.' });
     }
   };
 
@@ -101,9 +113,11 @@ export default function ParametresPage() {
     const { error } = await supabase.from('formulas').delete().eq('id', deleteTarget.id);
     if (error) {
       console.error(error);
+      setToast({ type: 'error', msg: 'Erreur lors de la suppression.' });
     } else {
       setDeleteTarget(null);
       await fetchFormulas();
+      setToast({ type: 'success', msg: 'Formule supprimée avec succès.' });
     }
   };
 
@@ -111,6 +125,22 @@ export default function ParametresPage() {
     <div>
       <h1 className="text-xl font-semibold text-slate-900 mb-1">Paramètres</h1>
       <p className="text-sm text-slate-500 mb-6">Gérez les formules d'abonnement et leurs prix.</p>
+
+      {/* Toast */}
+      {toast && (
+        <div
+          className={`fixed top-4 right-4 z-50 flex items-center gap-2 rounded-lg px-4 py-3 text-sm shadow-lg ${
+            toast.type === 'success'
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              : 'bg-red-50 text-red-700 border border-red-200'
+          }`}
+        >
+          {toast.type === 'success'
+            ? <CheckCircle2 className="h-4 w-4 shrink-0" />
+            : <AlertCircle className="h-4 w-4 shrink-0" />}
+          <span>{toast.msg}</span>
+        </div>
+      )}
 
       {/* Formules */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6">

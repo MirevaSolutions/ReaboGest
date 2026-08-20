@@ -23,27 +23,47 @@ export default function ConfirmDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-slate-900/60" onClick={onCancel} />
-      <div className="relative bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
-        <div className="flex items-start gap-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100">
-            <AlertTriangle className="h-5 w-5 text-red-600" />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-base font-semibold text-slate-900">{title}</h3>
-            <p className="mt-1.5 text-sm text-slate-600">{message}</p>
+      {/* Overlay */}
+      <div
+        className="fixed inset-0 bg-slate-900/50 backdrop-blur-[1px]"
+        onClick={onCancel}
+      />
+
+      {/* Dialog */}
+      <div className="relative w-full max-w-sm overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+        {/* Contenu */}
+        <div className="p-5">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50">
+              <AlertTriangle className="h-4 w-4 text-red-500" />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-semibold text-slate-900">
+                {title}
+              </h3>
+
+              <p className="mt-1.5 text-sm leading-5 text-slate-500">
+                {message}
+              </p>
+            </div>
           </div>
         </div>
-        <div className="mt-6 flex justify-end gap-3">
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/50 px-5 py-3">
           <button
+            type="button"
             onClick={onCancel}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100"
+            className="rounded-lg px-3.5 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
           >
             {cancelLabel}
           </button>
+
           <button
+            type="button"
             onClick={onConfirm}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700"
+            className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-600/20"
           >
             {confirmLabel}
           </button>

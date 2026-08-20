@@ -19,7 +19,10 @@ type Props = {
   open: boolean;
   initialClient?: ClientFormData | null;
   initialSubscription?: SubscriptionFormData | null;
-  onSubmit: (client: ClientFormData, subscription: SubscriptionFormData) => Promise<void>;
+  onSubmit: (
+    client: ClientFormData,
+    subscription: SubscriptionFormData
+  ) => Promise<void>;
   onClose: () => void;
 };
 
@@ -31,7 +34,12 @@ export default function ClientForm({
   onClose,
 }: Props) {
   const [formulas, setFormulas] = useState<Formula[]>([]);
-  const [client, setClient] = useState<ClientFormData>({ nom_complet: '', telephone: '' });
+
+  const [client, setClient] = useState<ClientFormData>({
+    nom_complet: '',
+    telephone: '',
+  });
+
   const [sub, setSub] = useState<SubscriptionFormData>({
     numero_abonne: '',
     numero_carte: '',
@@ -40,24 +48,34 @@ export default function ClientForm({
     date_fin: '',
     formula_id: '',
   });
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
+
     supabase
       .from('formulas')
       .select('*')
       .eq('active', true)
       .order('prix', { ascending: true })
       .then(({ data }) => {
-        if (data) setFormulas(data as Formula[]);
+        if (data) {
+          setFormulas(data as Formula[]);
+        }
       });
   }, [open]);
 
   useEffect(() => {
     if (open) {
-      setClient(initialClient ?? { nom_complet: '', telephone: '' });
+      setClient(
+        initialClient ?? {
+          nom_complet: '',
+          telephone: '',
+        }
+      );
+
       setSub(
         initialSubscription ?? {
           numero_abonne: '',
@@ -68,22 +86,30 @@ export default function ClientForm({
           formula_id: '',
         }
       );
+
       setError(null);
     }
   }, [open, initialClient, initialSubscription]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!client.nom_complet.trim()) {
       setError('Le nom complet est obligatoire.');
       return;
     }
+
     setSaving(true);
     setError(null);
+
     try {
       await onSubmit(client, sub);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.');
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Une erreur est survenue.'
+      );
     } finally {
       setSaving(false);
     }
@@ -93,138 +119,240 @@ export default function ClientForm({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-slate-900/60" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-          <h3 className="text-base font-semibold text-slate-900">
-            {initialClient ? 'Modifier le client' : 'Ajouter un client'}
-          </h3>
+      {/* Overlay */}
+      <div
+        className="fixed inset-0 bg-slate-900/50 backdrop-blur-[1px]"
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div className="relative flex w-full max-w-xl max-h-[90vh] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">
+              {initialClient
+                ? 'Modifier le client'
+                : 'Ajouter un client'}
+            </h3>
+
+            <p className="mt-0.5 text-xs text-slate-400">
+              {initialClient
+                ? 'Modifiez les informations du client.'
+                : 'Ajoutez un client et son abonnement.'}
+            </p>
+          </div>
+
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
             aria-label="Fermer"
           >
             <XIcon />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="px-6 py-5 overflow-y-auto space-y-5">
-          {/* Informations personnelles */}
-          <div>
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">
-              Informations personnelles
-            </h4>
-            <div className="space-y-3">
-              <Field label="Nom complet" required>
-                <input
-                  type="text"
-                  value={client.nom_complet}
-                  onChange={(e) => setClient({ ...client, nom_complet: e.target.value })}
-                  className={inputClass}
-                  placeholder="Ex: Rakoto Jean"
+        {/* Form */}
+        <form
+          onSubmit={handleSubmit}
+          className="overflow-y-auto px-5 py-5"
+        >
+          <div className="space-y-6">
+
+            {/* Informations personnelles */}
+            <FormSection
+              title="Informations personnelles"
+              description="Informations principales du client."
+            >
+              <div className="space-y-4">
+                <Field
+                  label="Nom complet"
                   required
-                />
-              </Field>
-              <Field label="Téléphone">
-                <input
-                  type="tel"
-                  value={client.telephone}
-                  onChange={(e) => setClient({ ...client, telephone: e.target.value })}
-                  className={inputClass}
-                  placeholder="Ex: 034 12 345 67"
-                />
-              </Field>
-            </div>
-          </div>
-
-          {/* Abonnement */}
-          <div>
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">
-              Abonnement
-            </h4>
-            <div className="space-y-3">
-              <Field label="Formule">
-                <select
-                  value={sub.formula_id}
-                  onChange={(e) => setSub({ ...sub, formula_id: e.target.value })}
-                  className={inputClass}
                 >
-                  <option value="">— Sélectionner —</option>
-                  {formulas.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.nom} — {new Intl.NumberFormat('fr-FR').format(f.prix)} Ar
+                  <input
+                    type="text"
+                    value={client.nom_complet}
+                    onChange={(e) =>
+                      setClient({
+                        ...client,
+                        nom_complet: e.target.value,
+                      })
+                    }
+                    className={inputClass}
+                    placeholder="Ex : Rakoto Jean"
+                    required
+                  />
+                </Field>
+
+                <Field label="Téléphone">
+                  <input
+                    type="tel"
+                    value={client.telephone}
+                    onChange={(e) =>
+                      setClient({
+                        ...client,
+                        telephone: e.target.value,
+                      })
+                    }
+                    className={inputClass}
+                    placeholder="Ex : 034 12 345 67"
+                  />
+                </Field>
+              </div>
+            </FormSection>
+
+            {/* Abonnement */}
+            <FormSection
+              title="Abonnement"
+              description="Informations liées au réabonnement du client."
+            >
+              <div className="space-y-4">
+
+                {/* Formule */}
+                <Field label="Formule">
+                  <select
+                    value={sub.formula_id}
+                    onChange={(e) =>
+                      setSub({
+                        ...sub,
+                        formula_id: e.target.value,
+                      })
+                    }
+                    className={inputClass}
+                  >
+                    <option value="">
+                      — Sélectionner une formule —
                     </option>
-                  ))}
-                </select>
-              </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Numéro abonné">
-                  <input
-                    type="text"
-                    value={sub.numero_abonne}
-                    onChange={(e) => setSub({ ...sub, numero_abonne: e.target.value })}
-                    className={inputClass}
-                    placeholder="Ex: 1234567"
-                  />
+
+                    {formulas.map((f) => (
+                      <option
+                        key={f.id}
+                        value={f.id}
+                      >
+                        {f.nom} —{' '}
+                        {new Intl.NumberFormat('fr-FR').format(
+                          f.prix
+                        )}{' '}
+                        Ar
+                      </option>
+                    ))}
+                  </select>
                 </Field>
-                <Field label="Numéro de carte">
+
+                {/* Numéros */}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field label="Numéro abonné">
+                    <input
+                      type="text"
+                      value={sub.numero_abonne}
+                      onChange={(e) =>
+                        setSub({
+                          ...sub,
+                          numero_abonne: e.target.value,
+                        })
+                      }
+                      className={inputClass}
+                      placeholder="Ex : 1234567"
+                    />
+                  </Field>
+
+                  <Field label="Numéro de carte">
+                    <input
+                      type="text"
+                      value={sub.numero_carte}
+                      onChange={(e) =>
+                        setSub({
+                          ...sub,
+                          numero_carte: e.target.value,
+                        })
+                      }
+                      className={inputClass}
+                      placeholder="Ex : 0123 4567 8901"
+                    />
+                  </Field>
+                </div>
+
+                {/* Dates */}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field label="Date de réabonnement">
+                    <input
+                      type="date"
+                      value={sub.date_reabonnement}
+                      onChange={(e) =>
+                        setSub({
+                          ...sub,
+                          date_reabonnement: e.target.value,
+                        })
+                      }
+                      className={inputClass}
+                    />
+                  </Field>
+
+                  <Field label="Date de fin">
+                    <input
+                      type="date"
+                      value={sub.date_fin}
+                      onChange={(e) =>
+                        setSub({
+                          ...sub,
+                          date_fin: e.target.value,
+                        })
+                      }
+                      className={inputClass}
+                    />
+                  </Field>
+                </div>
+
+                {/* VAD */}
+                <Field label="VAD">
                   <input
                     type="text"
-                    value={sub.numero_carte}
-                    onChange={(e) => setSub({ ...sub, numero_carte: e.target.value })}
+                    value={sub.vad}
+                    onChange={(e) =>
+                      setSub({
+                        ...sub,
+                        vad: e.target.value,
+                      })
+                    }
                     className={inputClass}
-                    placeholder="Ex: 0123 4567 8901"
+                    placeholder="Facultatif"
                   />
                 </Field>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Date de réabonnement">
-                  <input
-                    type="date"
-                    value={sub.date_reabonnement}
-                    onChange={(e) => setSub({ ...sub, date_reabonnement: e.target.value })}
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Date de fin">
-                  <input
-                    type="date"
-                    value={sub.date_fin}
-                    onChange={(e) => setSub({ ...sub, date_fin: e.target.value })}
-                    className={inputClass}
-                  />
-                </Field>
+            </FormSection>
+
+            {/* Erreur */}
+            {error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5">
+                <p className="text-sm text-red-600">
+                  {error}
+                </p>
               </div>
-              <Field label="VAD">
-                <input
-                  type="text"
-                  value={sub.vad}
-                  onChange={(e) => setSub({ ...sub, vad: e.target.value })}
-                  className={inputClass}
-                  placeholder="Facultatif"
-                />
-              </Field>
-            </div>
+            )}
           </div>
 
-          {error && (
-            <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
-          )}
-
-          <div className="flex justify-end gap-3 pt-2">
+          {/* Footer */}
+          <div className="mt-6 flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100"
+              disabled={saving}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
             >
               Annuler
             </button>
+
             <button
               type="submit"
               disabled={saving}
-              className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50"
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {saving ? 'Enregistrement…' : initialClient ? 'Enregistrer' : 'Ajouter'}
+              {saving
+                ? 'Enregistrement…'
+                : initialClient
+                  ? 'Enregistrer'
+                  : 'Ajouter'}
             </button>
           </div>
         </form>
@@ -234,7 +362,33 @@ export default function ClientForm({
 }
 
 const inputClass =
-  'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-slate-900 focus:ring-1 focus:ring-slate-900 focus:outline-none';
+  'h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 hover:border-slate-300 focus:border-slate-900 focus:ring-1 focus:ring-slate-900';
+
+function FormSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="mb-4">
+        <h4 className="text-sm font-semibold text-slate-900">
+          {title}
+        </h4>
+
+        <p className="mt-0.5 text-xs text-slate-400">
+          {description}
+        </p>
+      </div>
+
+      {children}
+    </div>
+  );
+}
 
 function Field({
   label,
@@ -247,10 +401,13 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="block text-sm font-medium text-slate-700 mb-1">
+      <span className="mb-1.5 block text-xs font-medium text-slate-600">
         {label}
-        {required && <span className="text-red-500"> *</span>}
+        {required && (
+          <span className="ml-0.5 text-red-500">*</span>
+        )}
       </span>
+
       {children}
     </label>
   );
@@ -258,8 +415,18 @@ function Field({
 
 function XIcon() {
   return (
-    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+    <svg
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M6 18L18 6M6 6l12 12"
+      />
     </svg>
   );
 }

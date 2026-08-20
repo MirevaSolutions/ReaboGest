@@ -1,13 +1,14 @@
+import { todayLocal } from '@/lib/date';
+
 export type SubscriptionStatus = 'actif' | "expire_aujourd_hui" | 'expire_demain' | 'expire';
 
 export function getStatus(dateFin: string | null | undefined): SubscriptionStatus {
   if (!dateFin) return 'expire';
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const todayStr = todayLocal();
+  const today = new Date(todayStr + 'T00:00:00');
 
-  const end = new Date(dateFin);
-  end.setHours(0, 0, 0, 0);
+  const end = new Date(dateFin + 'T00:00:00');
 
   const diffMs = end.getTime() - today.getTime();
   const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
@@ -34,7 +35,7 @@ export const statusClasses: Record<SubscriptionStatus, string> = {
 
 export function formatDate(date: string | null | undefined): string {
   if (!date) return '—';
-  const d = new Date(date);
+  const d = new Date(date + 'T00:00:00');
   if (isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('fr-FR', {
     day: '2-digit',

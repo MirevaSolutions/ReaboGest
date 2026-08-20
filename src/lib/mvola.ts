@@ -95,6 +95,65 @@ export async function performReabonnement(input: ReabonnementInput): Promise<Rea
   return { success: true };
 }
 
+export type AbonnementInput = {
+  subscriptionId: string;
+  formulaId: string;
+  dateReabonnement: string;
+  montant: number;
+};
+
+export type AbonnementResult = {
+  success: boolean;
+  error?: string;
+};
+
+export async function performAbonnement(input: AbonnementInput): Promise<AbonnementResult> {
+  const { subscriptionId, formulaId, dateReabonnement, montant } = input;
+
+  if (montant <= 0) {
+    return { success: true };
+  }
+
+  const soldeAvant = await getMvolaBalance();
+
+  if (soldeAvant < montant) {
+    return { success: false, error: 'Solde MVola insuffisant.' };
+  }
+
+  const soldeApres = soldeAvant - montant;
+
+  const { data: reabonnement, error: reabErr } = await supabase
+    .from('reabonnements')
+    .insert({
+      subscription_id: subscriptionId,
+      formula_id: formulaId || null,
+      date_reabonnement: dateReabonnement,
+      montant,
+    })
+    .select()
+    .single();
+
+  if (reabErr) {
+    return { success: false, error: reabErr.message };
+  }
+
+  const { error: mvolaErr } = await supabase.from('mvola_transactions').insert({
+    type: 'REABONNEMENT',
+    montant,
+    solde_avant: soldeAvant,
+    solde_apres: soldeApres,
+    date_transaction: dateReabonnement,
+    description: 'Abonnement initial',
+    reabonnement_id: reabonnement.id,
+  });
+
+  if (mvolaErr) {
+    return { success: false, error: mvolaErr.message };
+  }
+
+  return { success: true };
+}
+
 export type DepotInput = {
   montant: number;
   dateTransaction: string;

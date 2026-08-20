@@ -1,4 +1,9 @@
-import { getStatus, statusLabels, statusClasses, type SubscriptionStatus } from '@/lib/status';
+import {
+  getStatus,
+  statusLabels,
+  statusClasses,
+  type SubscriptionStatus,
+} from '@/lib/status';
 
 type Props = {
   dateFin: string | null | undefined;
@@ -6,9 +11,10 @@ type Props = {
 
 export default function StatusBadge({ dateFin }: Props) {
   const status: SubscriptionStatus = getStatus(dateFin);
+
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${statusClasses[status]}`}
+      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${statusClasses[status]}`}
     >
       {statusLabels[status]}
     </span>

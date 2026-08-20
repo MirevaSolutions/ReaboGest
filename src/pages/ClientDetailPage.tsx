@@ -12,9 +12,10 @@ import {
 } from 'lucide-react';
 import { supabase, type ClientWithSubscriptions, type Formula, type ReabonnementWithFormula } from '@/lib/supabase';
 import { formatDate, formatPrice, getStatus, statusLabels, statusClasses } from '@/lib/status';
+import { performAbonnement } from '@/lib/mvola';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import Modal from '@/components/Modal';
-import { History } from 'lucide-react';
+import { History, AlertCircle } from 'lucide-react';
 
 type Props = {
   clientId: string;
@@ -28,6 +29,8 @@ export default function ClientDetailPage({ clientId, onBack }: Props) {
   const [subFormOpen, setSubFormOpen] = useState(false);
   const [editingSubId, setEditingSubId] = useState<string | null>(null);
   const [deleteSubId, setDeleteSubId] = useState<string | null>(null);
+  const [savingSub, setSavingSub] = useState(false);
+  const [subError, setSubError] = useState<string | null>(null);
   const [reabonnementsBySub, setReabonnementsBySub] = useState<Record<string, ReabonnementWithFormula[]>>({});
 
   // formulaire abonnement
@@ -92,6 +95,7 @@ export default function ClientDetailPage({ clientId, onBack }: Props) {
 
   const openAddSub = () => {
     setEditingSubId(null);
+    setSubError(null);
     setSubForm({
       numero_abonne: '',
       numero_carte: '',
@@ -120,6 +124,7 @@ export default function ClientDetailPage({ clientId, onBack }: Props) {
 
   const handleSaveSub = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSavingSub(true);
     const payload = {
       numero_abonne: subForm.numero_abonne.trim() || null,
       numero_carte: subForm.numero_carte.trim() || null,
@@ -131,16 +136,36 @@ export default function ClientDetailPage({ clientId, onBack }: Props) {
     };
     if (editingSubId) {
       const { error } = await supabase.from('subscriptions').update(payload).eq('id', editingSubId);
-      if (error) { console.error(error); return; }
+      if (error) { console.error(error); setSavingSub(false); return; }
     } else {
-      const { error } = await supabase.from('subscriptions').insert({
+      const { data: newSub, error } = await supabase.from('subscriptions').insert({
         client_id: clientId,
         ...payload,
         updated_at: undefined,
-      });
-      if (error) { console.error(error); return; }
+      }).select().single();
+      if (error) { console.error(error); setSavingSub(false); return; }
+
+      // Enregistrer l'abonnement initial comme source de revenu
+      if (subForm.formula_id && subForm.date_reabonnement) {
+        const formula = formulas.find((f) => f.id === subForm.formula_id);
+        if (formula && formula.prix > 0) {
+          const result = await performAbonnement({
+            subscriptionId: newSub.id,
+            formulaId: subForm.formula_id,
+            dateReabonnement: subForm.date_reabonnement,
+            montant: formula.prix,
+          });
+          if (!result.success) {
+            setSubError(result.error ?? 'Solde MVola insuffisant pour l\'abonnement.');
+            setSavingSub(false);
+            return;
+          }
+        }
+      }
     }
     setSubFormOpen(false);
+    setSubError(null);
+    setSavingSub(false);
     await fetchClient();
   };
 
@@ -379,6 +404,13 @@ export default function ClientDetailPage({ clientId, onBack }: Props) {
             />
           </label>
 
+          {subError && (
+            <div className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{subError}</span>
+            </div>
+          )}
+
           <div className="flex justify-end gap-3 pt-2">
             <button
               type="button"
@@ -389,9 +421,10 @@ export default function ClientDetailPage({ clientId, onBack }: Props) {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-slate-900 hover:bg-slate-800"
+              disabled={savingSub}
+              className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50"
             >
-              {editingSubId ? 'Enregistrer' : 'Ajouter'}
+              {savingSub ? 'Enregistrement…' : editingSubId ? 'Enregistrer' : 'Ajouter'}
             </button>
           </div>
         </form>

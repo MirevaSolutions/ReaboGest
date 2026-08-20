@@ -10,9 +10,10 @@ import {
 import { supabase, type ClientWithSubscriptions, type Formula } from '@/lib/supabase';
 import { formatDate, formatPrice, getStatus, statusLabels, statusClasses } from '@/lib/status';
 import { getMvolaBalance, performReabonnement } from '@/lib/mvola';
+import { todayLocal } from '@/lib/date';
 
 const inputClass =
-  'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-slate-900 focus:ring-1 focus:ring-slate-900 focus:outline-none';
+  'w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-slate-900 focus:ring-1 focus:ring-slate-900 focus:outline-none';
 
 export default function ReabonnementsPage() {
   const [clients, setClients] = useState<ClientWithSubscriptions[]>([]);
@@ -25,9 +26,7 @@ export default function ReabonnementsPage() {
   // Formulaire
   const [formFormulaId, setFormFormulaId] = useState('');
   const [formMontant, setFormMontant] = useState('');
-  const [formDateReabonnement, setFormDateReabonnement] = useState(
-    new Date().toISOString().slice(0, 10)
-  );
+  const [formDateReabonnement, setFormDateReabonnement] = useState(todayLocal());
   const [formDateFin, setFormDateFin] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
@@ -64,7 +63,6 @@ export default function ReabonnementsPage() {
       });
   }, [fetchClients, fetchSolde]);
 
-  // Aplatir tous les abonnements avec leur client
   const allSubs = clients.flatMap((c) =>
     (c.subscriptions ?? []).map((s) => ({
       sub: s,
@@ -83,7 +81,6 @@ export default function ReabonnementsPage() {
     );
   });
 
-  // Trier par date de fin (les plus proches de l'expiration en premier)
   const sorted = [...filtered].sort((a, b) => {
     const da = a.sub.date_fin ?? '9999-12-31';
     const db = b.sub.date_fin ?? '9999-12-31';
@@ -92,7 +89,6 @@ export default function ReabonnementsPage() {
 
   const selected = allSubs.find(({ sub }) => sub.id === selectedSubId) ?? null;
 
-  // Quand on sélectionne une formule, auto-remplir le montant
   useEffect(() => {
     if (formFormulaId) {
       const f = formulas.find((f) => f.id === formFormulaId);
@@ -106,7 +102,7 @@ export default function ReabonnementsPage() {
     const item = allSubs.find(({ sub }) => sub.id === subId);
     if (item) {
       setFormFormulaId(item.sub.formula_id ?? '');
-      setFormDateReabonnement(new Date().toISOString().slice(0, 10));
+      setFormDateReabonnement(todayLocal());
       setFormDateFin('');
     }
   };
@@ -148,31 +144,31 @@ export default function ReabonnementsPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-slate-900 mb-1">Réabonnements</h1>
-      <div className="flex items-center gap-2 mb-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-200">
+      <h1 className="text-lg font-semibold text-slate-900 mb-1">Réabonnements</h1>
+      <div className="flex items-center gap-2 mb-5">
+        <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-white border border-slate-200">
           <Wallet className="h-4 w-4 text-slate-500" />
           <span className="text-sm text-slate-600">Solde MVola :</span>
           <span className="text-sm font-semibold text-slate-900">{formatPrice(solde)}</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Liste gauche */}
         <div>
           {/* Search */}
-          <div className="relative mb-4">
+          <div className="relative mb-3">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Rechercher un client ou abonné…"
-              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 text-sm focus:border-slate-900 focus:ring-1 focus:ring-slate-900 focus:outline-none"
+              className="w-full pl-10 pr-4 py-2 rounded-md border border-slate-300 text-sm focus:border-slate-900 focus:ring-1 focus:ring-slate-900 focus:outline-none"
             />
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="bg-white rounded-md border border-slate-200 overflow-hidden">
             {loading ? (
               <div className="px-4 py-8 text-center text-sm text-slate-400">Chargement…</div>
             ) : sorted.length === 0 ? (
@@ -188,7 +184,7 @@ export default function ReabonnementsPage() {
                     <button
                       key={sub.id}
                       onClick={() => handleSelectSub(sub.id)}
-                      className={`w-full text-left px-4 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 ${
+                      className={`w-full text-left px-3 py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50 ${
                         isSelected ? 'bg-slate-100' : ''
                       }`}
                     >
@@ -202,7 +198,7 @@ export default function ReabonnementsPage() {
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusClasses[status]}`}
+                          className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ${statusClasses[status]}`}
                         >
                           {statusLabels[status]}
                         </span>
@@ -219,22 +215,22 @@ export default function ReabonnementsPage() {
         {/* Panneau droit — sélection + formulaire */}
         <div>
           {!selected ? (
-            <div className="bg-white rounded-xl border border-slate-200 p-10 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 mb-4">
-                <RefreshCw className="h-7 w-7 text-slate-400" />
+            <div className="bg-white rounded-md border border-slate-200 p-8 text-center">
+              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-md bg-slate-100 mb-3">
+                <RefreshCw className="h-5 w-5 text-slate-400" />
               </div>
               <p className="text-sm text-slate-500">
                 Sélectionnez un client dans la liste pour effectuer un réabonnement.
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {/* Infos client/abonnement */}
-              <div className="bg-white rounded-xl border border-slate-200 p-5">
-                <h3 className="text-sm font-semibold text-slate-900 mb-4">
+              <div className="bg-white rounded-md border border-slate-200 p-4">
+                <h3 className="text-sm font-semibold text-slate-900 mb-3">
                   Informations actuelles
                 </h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-2 gap-3 text-sm">
                   <InfoItem label="Nom" value={selected.client.nom_complet} />
                   <InfoItem label="Téléphone" value={selected.client.telephone} />
                   <InfoItem label="N° abonné" value={selected.sub.numero_abonne} />
@@ -255,7 +251,7 @@ export default function ReabonnementsPage() {
               </div>
 
               {/* Formulaire de réabonnement */}
-              <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+              <form onSubmit={handleSubmit} className="bg-white rounded-md border border-slate-200 p-4 space-y-3">
                 <h3 className="text-sm font-semibold text-slate-900">Nouveau réabonnement</h3>
 
                 <label className="block">
@@ -318,7 +314,7 @@ export default function ReabonnementsPage() {
 
                 {feedback && (
                   <div
-                    className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm ${
+                    className={`flex items-start gap-2 rounded-md px-3 py-2 text-sm ${
                       feedback.type === 'error'
                         ? 'bg-red-50 text-red-700'
                         : 'bg-emerald-50 text-emerald-700'
@@ -337,7 +333,7 @@ export default function ReabonnementsPage() {
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50"
+                    className="px-3 py-2 rounded-md text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50"
                   >
                     {submitting ? 'Validation…' : 'Valider le réabonnement'}
                   </button>
