@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Plus, Pencil, Trash2, Check, X, CheckCircle2, AlertCircle } from 'lucide-react';
-import { supabase, type Formula } from '@/lib/supabase';
+import type { Formula } from '@/lib/supabase';
+import {
+  getFormulas,
+  createFormula,
+  updateFormula,
+  toggleFormulaActive,
+  deleteFormula,
+} from '@/services/parametres.service';
 import { formatPrice } from '@/lib/status';
 import ConfirmDialog from '@/components/ConfirmDialog';
 
@@ -23,18 +30,21 @@ export default function ParametresPage() {
   }, [toast]);
 
   const fetchFormulas = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('formulas')
-      .select('*')
-      .order('prix', { ascending: true });
-    if (error) {
-      console.error(error);
-    } else {
-      setFormulas(data as Formula[]);
-    }
+  setLoading(true);
+
+  try {
+    const data = await getFormulas();
+    setFormulas(data);
+  } catch (error) {
+    console.error('Erreur chargement formules:', error);
+    setToast({
+      type: 'error',
+      msg: 'Erreur lors du chargement des formules.',
+    });
+  } finally {
     setLoading(false);
-  }, []);
+  }
+}, []);
 
   useEffect(() => {
     fetchFormulas();
@@ -47,79 +57,113 @@ export default function ParametresPage() {
   };
 
   const saveEdit = async (id: string) => {
-    const prix = parseInt(editPrix, 10);
-    if (!editNom.trim() || isNaN(prix) || prix < 0) return;
-    const { error } = await supabase
-      .from('formulas')
-      .update({
-        nom: editNom.trim(),
-        prix,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id);
-    if (error) {
-      console.error(error);
-      setToast({ type: 'error', msg: 'Erreur lors de la modification.' });
-    } else {
-      setEditingId(null);
-      await fetchFormulas();
-      setToast({ type: 'success', msg: 'Formule modifiée avec succès.' });
-    }
-  };
+  const prix = parseInt(editPrix, 10);
+
+  if (!editNom.trim() || isNaN(prix) || prix < 0) {
+    return;
+  }
+
+  try {
+    await updateFormula(id, editNom, prix);
+
+    setEditingId(null);
+    await fetchFormulas();
+
+    setToast({
+      type: 'success',
+      msg: 'Formule modifiée avec succès.',
+    });
+  } catch (error) {
+    console.error(error);
+
+    setToast({
+      type: 'error',
+      msg: 'Erreur lors de la modification.',
+    });
+  }
+};
 
   const toggleActive = async (f: Formula) => {
-    const { error } = await supabase
-      .from('formulas')
-      .update({ active: !f.active, updated_at: new Date().toISOString() })
-      .eq('id', f.id);
-    if (error) {
-      console.error(error);
-      setToast({ type: 'error', msg: 'Erreur lors du changement de statut.' });
-    } else {
-      await fetchFormulas();
-      setToast({ type: 'success', msg: 'Statut de la formule mis à jour.' });
-    }
-  };
+  try {
+    await toggleFormulaActive(f.id, !f.active);
+
+    await fetchFormulas();
+
+    setToast({
+      type: 'success',
+      msg: 'Statut de la formule mis à jour.',
+    });
+  } catch (error) {
+    console.error(error);
+
+    setToast({
+      type: 'error',
+      msg: 'Erreur lors du changement de statut.',
+    });
+  }
+};
 
   const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const prix = parseInt(addPrix, 10);
-    if (!addNom.trim()) {
-      setAddError('Le nom est obligatoire.');
-      return;
-    }
-    if (isNaN(prix) || prix < 0) {
-      setAddError('Le prix doit être un nombre valide.');
-      return;
-    }
-    const { error } = await supabase.from('formulas').insert({
-      nom: addNom.trim(),
-      prix,
-      active: true,
+  e.preventDefault();
+
+  const prix = parseInt(addPrix, 10);
+
+  if (!addNom.trim()) {
+    setAddError('Le nom est obligatoire.');
+    return;
+  }
+
+  if (isNaN(prix) || prix < 0) {
+    setAddError('Le prix doit être un nombre valide.');
+    return;
+  }
+
+  try {
+    await createFormula(addNom, prix);
+
+    setAddNom('');
+    setAddPrix('');
+    setAddError(null);
+
+    await fetchFormulas();
+
+    setToast({
+      type: 'success',
+      msg: 'Formule ajoutée avec succès.',
     });
-    if (error) {
-      setAddError(error.message);
-    } else {
-      setAddNom('');
-      setAddPrix('');
-      setAddError(null);
-      await fetchFormulas();
-      setToast({ type: 'success', msg: 'Formule ajoutée avec succès.' });
-    }
-  };
+  } catch (error) {
+    console.error(error);
+
+    setAddError(
+      error instanceof Error
+        ? error.message
+        : 'Une erreur est survenue.'
+    );
+  }
+};
 
   const handleDelete = async () => {
-    if (!deleteTarget) return;
-    const { error } = await supabase.from('formulas').delete().eq('id', deleteTarget.id);
-    if (error) {
-      console.error(error);
-      setToast({ type: 'error', msg: 'Erreur lors de la suppression.' });
-    } else {
-      setDeleteTarget(null);
-      await fetchFormulas();
-      setToast({ type: 'success', msg: 'Formule supprimée avec succès.' });
-    }
-  };
+  if (!deleteTarget) return;
+
+  try {
+    await deleteFormula(deleteTarget.id);
+
+    setDeleteTarget(null);
+    await fetchFormulas();
+
+    setToast({
+      type: 'success',
+      msg: 'Formule supprimée avec succès.',
+    });
+  } catch (error) {
+    console.error(error);
+
+    setToast({
+      type: 'error',
+      msg: 'Erreur lors de la suppression.',
+    });
+  }
+};
 
   return (
     <div>

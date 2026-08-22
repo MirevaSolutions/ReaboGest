@@ -10,9 +10,9 @@ import {
   CreditCard,
   Inbox,
 } from 'lucide-react';
-import { supabase, type ClientWithSubscriptions } from '@/lib/supabase';
+import type { ClientWithSubscriptions } from '@/lib/supabase';
+import { getDashboardData } from '@/services/dashboard.service';
 import { formatDate, formatPrice, getStatus, statusLabels, statusClasses, type SubscriptionStatus } from '@/lib/status';
-import { getMvolaBalance } from '@/lib/mvola';
 import { todayLocal } from '@/lib/date';
 
 type Props = {
@@ -36,65 +36,27 @@ export default function DashboardPage({ onOpenClient }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchData = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
+const fetchData = useCallback(async (isRefresh = false) => {
+  if (isRefresh) {
+    setRefreshing(true);
+  } else {
+    setLoading(true);
+  }
 
-    const todayStr = todayLocal();
+  try {
+    const data = await getDashboardData();
 
-    const [reabTodayResult, soldeVal, clientsResult] = await Promise.all([
-      supabase
-        .from('reabonnements')
-        .select('id, montant, date_reabonnement')
-        .eq('date_reabonnement', todayStr),
-      getMvolaBalance(),
-      supabase
-        .from('clients')
-        .select('*, subscriptions(*, formula:formulas(*))')
-        .order('nom_complet', { ascending: true }),
-    ]);
-
-    const reabs = reabTodayResult.data ?? [];
-    const totalRevenu = reabs.reduce((sum, r) => sum + r.montant, 0);
-    setRevenuToday(totalRevenu);
-    // TODO: si 'reabonnements' contient un client_id, compter les clients
-    // distincts ici plutôt que reabs.length pour différencier des réabonnements.
-    setReabonnementsToday(reabs.length);
-
-    setSolde(soldeVal);
-
-    const allClients = (clientsResult.data ?? []) as ClientWithSubscriptions[];
-    const today = new Date(todayStr + 'T00:00:00');
-
-    const items: UpcomingItem[] = [];
-    allClients.forEach((c) => {
-      (c.subscriptions ?? []).forEach((s) => {
-        if (!s.date_fin) return;
-        const end = new Date(s.date_fin + 'T00:00:00');
-        const diffDays = Math.round((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays >= 0 && diffDays <= 7) {
-          items.push({
-            client: c,
-            subId: s.id,
-            numero_abonne: s.numero_abonne,
-            numero_carte: s.numero_carte,
-            date_fin: s.date_fin,
-            status: getStatus(s.date_fin),
-          });
-        }
-      });
-    });
-
-    items.sort((a, b) => {
-      const da = a.date_fin ?? '9999-12-31';
-      const db = b.date_fin ?? '9999-12-31';
-      return da.localeCompare(db);
-    });
-
-    setUpcoming(items);
+    setRevenuToday(data.revenuToday);
+    setReabonnementsToday(data.reabonnementsToday);
+    setSolde(data.solde);
+    setUpcoming(data.upcoming);
+  } catch (error) {
+    console.error('Erreur chargement dashboard:', error);
+  } finally {
     setLoading(false);
     setRefreshing(false);
-  }, []);
+  }
+}, []);
 
   useEffect(() => {
     fetchData();

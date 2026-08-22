@@ -1,551 +1,804 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  Plus,
-  Search,
-  Eye,
+  ChevronLeft,
   Pencil,
   Trash2,
+  Phone,
+  CreditCard,
+  Calendar,
+  Tag,
+  FileText,
+  History,
+  AlertCircle,
 } from 'lucide-react';
 
-import {
-  supabase,
-  type ClientWithSubscriptions,
-  type Formula,
+import type {
+  ClientWithSubscriptions,
+  Formula,
+  ReabonnementWithFormula,
 } from '@/lib/supabase';
 
-import ClientForm, {
-  type ClientFormData,
-  type SubscriptionFormData,
-} from '@/components/ClientForm';
+import {
+  getClientDetail,
+  getActiveFormulas,
+  updateSubscription,
+  deleteSubscription,
+} from '@/services/client.service';
+
+import {
+  formatDate,
+  formatPrice,
+  getStatus,
+  statusLabels,
+  statusClasses,
+} from '@/lib/status';
 
 import ConfirmDialog from '@/components/ConfirmDialog';
-import StatusBadge from '@/components/StatusBadge';
+import Modal from '@/components/Modal';
 
 type Props = {
-  onViewClient?: (clientId: string) => void;
+  clientId: string;
+  onBack: () => void;
 };
 
-export default function ClientsPage({ onViewClient }: Props) {
-  const [clients, setClients] = useState<ClientWithSubscriptions[]>([]);
+type SubscriptionFormData = {
+  numero_abonne: string;
+  numero_carte: string;
+  vad: string;
+  date_reabonnement: string;
+  date_fin: string;
+  formula_id: string;
+};
+
+export default function ClientDetailPage({
+  clientId,
+  onBack,
+}: Props) {
+  const [client, setClient] =
+    useState<ClientWithSubscriptions | null>(null);
+
   const [formulas, setFormulas] = useState<Formula[]>([]);
 
+  const [reabonnementsBySub, setReabonnementsBySub] =
+    useState<Record<string, ReabonnementWithFormula[]>>({});
+
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
 
-  const [formOpen, setFormOpen] = useState(false);
+  const [subFormOpen, setSubFormOpen] = useState(false);
 
-  const [editingClient, setEditingClient] =
-    useState<ClientWithSubscriptions | null>(null);
+  const [editingSubId, setEditingSubId] =
+    useState<string | null>(null);
 
-  const [deleteClient, setDeleteClient] =
-    useState<ClientWithSubscriptions | null>(null);
+  const [deleteSubId, setDeleteSubId] =
+    useState<string | null>(null);
 
-  const [error, setError] = useState<string | null>(null);
+  const [savingSub, setSavingSub] = useState(false);
 
-  const loadClients = async () => {
+  const [subError, setSubError] =
+    useState<string | null>(null);
+
+  const [pageError, setPageError] =
+    useState<string | null>(null);
+
+  const [subForm, setSubForm] =
+    useState<SubscriptionFormData>({
+      numero_abonne: '',
+      numero_carte: '',
+      vad: '',
+      date_reabonnement: '',
+      date_fin: '',
+      formula_id: '',
+    });
+
+  /*
+   * ============================
+   * CHARGEMENT DU CLIENT
+   * ============================
+   */
+
+  const loadClient = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setPageError(null);
 
-    const { data, error } = await supabase
-      .from('clients')
-      .select(`
-        *,
-        subscriptions(
-          *,
-          formula:formulas(*)
-        )
-      `)
-      .order('created_at', { ascending: false });
+    try {
+      const result = await getClientDetail(clientId);
 
-    if (error) {
-      console.error(error);
-      setError('Impossible de charger les clients.');
-      setClients([]);
-    } else {
-      setClients((data ?? []) as ClientWithSubscriptions[]);
+      setClient(result.client);
+      setReabonnementsBySub(result.reabonnementsBySub);
+    } catch (error) {
+      console.error('Erreur chargement client:', error);
+
+      setClient(null);
+      setReabonnementsBySub({});
+
+      setPageError(
+        error instanceof Error
+          ? error.message
+          : 'Impossible de charger le client.'
+      );
+    } finally {
+      setLoading(false);
     }
+  }, [clientId]);
 
-    setLoading(false);
-  };
+  /*
+   * ============================
+   * CHARGEMENT DES FORMULES
+   * ============================
+   */
 
-  const loadFormulas = async () => {
-    const { data, error } = await supabase
-      .from('formulas')
-      .select('*')
-      .eq('active', true)
-      .order('prix', { ascending: true });
-
-    if (error) {
-      console.error(error);
-      return;
+  const loadFormulas = useCallback(async () => {
+    try {
+      const data = await getActiveFormulas();
+      setFormulas(data as Formula[]);
+    } catch (error) {
+      console.error('Erreur chargement formules:', error);
     }
-
-    setFormulas((data ?? []) as Formula[]);
-  };
-
-  useEffect(() => {
-    loadClients();
-    loadFormulas();
   }, []);
 
-  const filteredClients = clients.filter((client) => {
-    const value = search.toLowerCase().trim();
+  useEffect(() => {
+    loadClient();
+    loadFormulas();
+  }, [loadClient, loadFormulas]);
 
-    if (!value) return true;
+  /*
+   * ============================
+   * MODIFICATION ABONNEMENT
+   * ============================
+   */
 
-    return (
-      client.nom_complet?.toLowerCase().includes(value) ||
-      client.telephone?.toLowerCase().includes(value)
+  const openEditSub = (subId: string) => {
+    const sub = client?.subscriptions?.find(
+      (item) => item.id === subId
     );
-  });
 
-  const handleOpenCreate = () => {
-    setEditingClient(null);
-    setFormOpen(true);
+    if (!sub) return;
+
+    setEditingSubId(subId);
+
+    setSubForm({
+      numero_abonne: sub.numero_abonne ?? '',
+      numero_carte: sub.numero_carte ?? '',
+      vad: sub.vad ?? '',
+      date_reabonnement:
+        sub.date_reabonnement ?? '',
+      date_fin: sub.date_fin ?? '',
+      formula_id: sub.formula_id ?? '',
+    });
+
+    setSubError(null);
+    setSubFormOpen(true);
   };
 
-  const handleOpenEdit = (
-    client: ClientWithSubscriptions
-  ) => {
-    setEditingClient(client);
-    setFormOpen(true);
-  };
+  /*
+   * ============================
+   * SAUVEGARDE
+   * ============================
+   */
 
-  const handleSubmit = async (
-    clientData: ClientFormData,
-    subscriptionData: SubscriptionFormData
+  const handleSaveSub = async (
+    e: React.FormEvent
   ) => {
-    /*
-     * IMPORTANT :
-     *
-     * Cette fonction représente l'inscription complète.
-     *
-     * Elle devra ensuite être déplacée dans un service :
-     *
-     * clientService.createClientWithSubscription(...)
-     *
-     * afin de gérer dans une seule opération :
-     *
-     * 1. création du client
-     * 2. création de l'abonnement
-     * 3. augmentation de la recette
-     * 4. diminution du solde MVola
-     */
+    e.preventDefault();
 
-    if (!subscriptionData.formula_id) {
-      throw new Error(
+    if (!editingSubId) {
+      setSubError(
+        "Un abonnement ne peut pas être créé depuis cette page. Utilisez la page Réabonnements."
+      );
+      return;
+    }
+
+    if (!subForm.formula_id) {
+      setSubError(
         'Veuillez sélectionner une formule.'
       );
-    }
-
-    const selectedFormula = formulas.find(
-      (formula) =>
-        formula.id === subscriptionData.formula_id
-    );
-
-    if (!selectedFormula) {
-      throw new Error(
-        'La formule sélectionnée est introuvable.'
-      );
-    }
-
-    /*
-     * Modification d'un client existant
-     */
-    if (editingClient) {
-      const { error } = await supabase
-        .from('clients')
-        .update({
-          nom_complet: clientData.nom_complet,
-          telephone: clientData.telephone,
-        })
-        .eq('id', editingClient.id);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      setFormOpen(false);
-      setEditingClient(null);
-
-      await loadClients();
-
       return;
     }
 
-    /*
-     * Nouvelle inscription
-     *
-     * Pour le moment, on prépare les données.
-     *
-     * L'opération financière devra être branchée
-     * avec ton mécanisme actuel de recette / MVola.
-     */
+    setSavingSub(true);
+    setSubError(null);
 
-    const { data: newClient, error: clientError } =
-      await supabase
-        .from('clients')
-        .insert({
-          nom_complet: clientData.nom_complet,
-          telephone: clientData.telephone,
-        })
-        .select()
-        .single();
+    try {
+      await updateSubscription(
+        editingSubId,
+        subForm
+      );
 
-    if (clientError) {
-      throw new Error(clientError.message);
+      setSubFormOpen(false);
+      setEditingSubId(null);
+
+      await loadClient();
+    } catch (error) {
+      console.error(
+        'Erreur modification abonnement:',
+        error
+      );
+
+      setSubError(
+        error instanceof Error
+          ? error.message
+          : "Impossible de modifier l'abonnement."
+      );
+    } finally {
+      setSavingSub(false);
     }
+  };
 
-    if (!newClient) {
-      throw new Error(
-        'Le client n’a pas pu être créé.'
+  /*
+   * ============================
+   * SUPPRESSION
+   * ============================
+   */
+
+  const handleDeleteSub = async () => {
+    if (!deleteSubId) return;
+
+    try {
+      await deleteSubscription(deleteSubId);
+
+      setDeleteSubId(null);
+
+      await loadClient();
+    } catch (error) {
+      console.error(
+        'Erreur suppression abonnement:',
+        error
+      );
+
+      setPageError(
+        error instanceof Error
+          ? error.message
+          : "Impossible de supprimer l'abonnement."
       );
     }
+  };
 
-    /*
-     * Création du premier abonnement
-     */
-    const { error: subscriptionError } =
-      await supabase
-        .from('subscriptions')
-        .insert({
-          client_id: newClient.id,
-          numero_abonne:
-            subscriptionData.numero_abonne || null,
-          numero_carte:
-            subscriptionData.numero_carte || null,
-          vad: subscriptionData.vad || null,
-          date_reabonnement:
-            subscriptionData.date_reabonnement || null,
-          date_fin:
-            subscriptionData.date_fin || null,
-          formula_id: subscriptionData.formula_id,
-        });
+  /*
+   * ============================
+   * LOADING
+   * ============================
+   */
 
-    if (subscriptionError) {
-      /*
-       * Si l'abonnement échoue, on supprime
-       * le client qui vient d'être créé.
-       */
-      await supabase
-        .from('clients')
-        .delete()
-        .eq('id', newClient.id);
-
-      throw new Error(subscriptionError.message);
-    }
-
-    /*
-     * TODO :
-     *
-     * Ici devra être exécutée l'opération financière :
-     *
-     * recette += selectedFormula.prix
-     *
-     * solde MVola -= selectedFormula.prix
-     *
-     * Cela sera déplacé dans le service métier
-     * afin que toute l'inscription soit atomique.
-     */
-
-    console.log(
-      'Nouvelle inscription :',
-      selectedFormula.prix
+  if (loading) {
+    return (
+      <div className="py-12 text-center text-sm text-slate-400">
+        Chargement…
+      </div>
     );
+  }
 
-    setFormOpen(false);
-    setEditingClient(null);
+  /*
+   * ============================
+   * ERREUR
+   * ============================
+   */
 
-    await loadClients();
-  };
+  if (pageError && !client) {
+    return (
+      <div className="py-12 text-center">
+        <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-md bg-red-50">
+          <AlertCircle className="h-4 w-4 text-red-500" />
+        </div>
 
-  const handleDelete = async () => {
-    if (!deleteClient) return;
+        <p className="text-sm text-red-600 mb-4">
+          {pageError}
+        </p>
 
-    const { error } = await supabase
-      .from('clients')
-      .delete()
-      .eq('id', deleteClient.id);
+        <button
+          onClick={onBack}
+          className="text-sm font-medium text-slate-900 hover:underline"
+        >
+          Retour aux clients
+        </button>
+      </div>
+    );
+  }
 
-    if (error) {
-      setError(error.message);
-      return;
-    }
+  if (!client) {
+    return (
+      <div className="py-12 text-center">
+        <p className="text-sm text-slate-400 mb-4">
+          Client introuvable.
+        </p>
 
-    setDeleteClient(null);
-
-    await loadClients();
-  };
-
-  const getCurrentSubscription = (
-    client: ClientWithSubscriptions
-  ) => {
-    if (
-      !client.subscriptions ||
-      client.subscriptions.length === 0
-    ) {
-      return null;
-    }
-
-    return [...client.subscriptions].sort((a, b) => {
-      const dateA = a.date_fin
-        ? new Date(a.date_fin).getTime()
-        : 0;
-
-      const dateB = b.date_fin
-        ? new Date(b.date_fin).getTime()
-        : 0;
-
-      return dateB - dateA;
-    })[0];
-  };
+        <button
+          onClick={onBack}
+          className="text-sm font-medium text-slate-900 hover:underline"
+        >
+          Retour aux clients
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div>
-      {/* En-tête */}
-      <div className="mb-5 flex items-center justify-between gap-3">
+      {/* ============================
+          RETOUR
+      ============================ */}
+
+      <button
+        onClick={onBack}
+        className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900 mb-4"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Retour aux clients
+      </button>
+
+      {/* ============================
+          HEADER
+      ============================ */}
+
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">
-            Clients
+          <h1 className="text-lg font-semibold text-slate-900">
+            {client.nom_complet}
           </h1>
 
-          <p className="mt-0.5 text-sm text-slate-500">
-            Gestion des clients et de leurs abonnements.
+          <p className="text-xs text-slate-500 mt-0.5">
+            Client depuis le{' '}
+            {formatDate(client.created_at)}
           </p>
         </div>
-
-        <button
-          type="button"
-          onClick={handleOpenCreate}
-          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
-        >
-          <Plus className="h-4 w-4" />
-          Ajouter un client
-        </button>
       </div>
 
-      {/* Recherche */}
-      <div className="mb-4 border border-slate-200 bg-white p-3">
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      {/* ============================
+          ERREUR
+      ============================ */}
 
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Rechercher un client..."
-            className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm text-slate-900 outline-none focus:border-slate-900"
+      {pageError && (
+        <div className="mb-4 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+
+          <span>{pageError}</span>
+        </div>
+      )}
+
+      {/* ============================
+          INFORMATIONS PERSONNELLES
+      ============================ */}
+
+      <div className="bg-white rounded-md border border-slate-200 p-4 mb-4">
+        <h2 className="text-sm font-semibold text-slate-900 mb-4">
+          Informations personnelles
+        </h2>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <InfoItem
+            icon={Phone}
+            label="Téléphone"
+            value={client.telephone}
           />
         </div>
       </div>
 
-      {/* Erreur */}
-      {error && (
-        <div className="mb-4 border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
+      {/* ============================
+          ABONNEMENTS
+      ============================ */}
+
+      <div className="bg-white rounded-md border border-slate-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-200">
+          <h2 className="text-sm font-semibold text-slate-900">
+            Abonnement
+          </h2>
+
+          <p className="text-xs text-slate-500 mt-0.5">
+            Les nouveaux réabonnements se font depuis la page
+            « Réabonnements ».
+          </p>
         </div>
-      )}
 
-      {/* Tableau */}
-      <div className="overflow-hidden border border-slate-200 bg-white">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500">
-                  Client
-                </th>
+        {!client.subscriptions ||
+        client.subscriptions.length === 0 ? (
+          <div className="px-4 py-10 text-center">
+            <p className="text-sm text-slate-400">
+              Aucun abonnement enregistré.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {client.subscriptions.map((sub) => {
+              const status = getStatus(
+                sub.date_fin
+              );
 
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500">
-                  Téléphone
-                </th>
+              const formula = sub.formula;
 
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500">
-                  Formule
-                </th>
+              return (
+                <div
+                  key={sub.id}
+                  className="px-4 py-4"
+                >
+                  {/* En-tête abonnement */}
 
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500">
-                  Date de fin
-                </th>
+                  <div className="flex items-start justify-between gap-4 mb-3">
+                    <div>
+                      <span
+                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusClasses[status]}`}
+                      >
+                        {statusLabels[status]}
+                      </span>
+                    </div>
 
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500">
-                  Statut
-                </th>
-
-                <th className="w-28 px-4 py-3 text-right text-xs font-semibold text-slate-500">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-slate-100">
-              {loading ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-4 py-10 text-center text-sm text-slate-400"
-                  >
-                    Chargement…
-                  </td>
-                </tr>
-              ) : filteredClients.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-4 py-10 text-center text-sm text-slate-400"
-                  >
-                    Aucun client trouvé.
-                  </td>
-                </tr>
-              ) : (
-                filteredClients.map((client) => {
-                  const subscription =
-                    getCurrentSubscription(client);
-
-                  return (
-                    <tr
-                      key={client.id}
-                      className="hover:bg-slate-50"
+                    <button
+                      onClick={() =>
+                        openEditSub(sub.id)
+                      }
+                      className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                      title="Modifier"
                     >
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-slate-900">
-                          {client.nom_complet}
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {/* Informations */}
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+                    <InfoItem
+                      icon={CreditCard}
+                      label="N° abonné"
+                      value={sub.numero_abonne}
+                    />
+
+                    <InfoItem
+                      icon={CreditCard}
+                      label="N° carte"
+                      value={sub.numero_carte}
+                    />
+
+                    <InfoItem
+                      icon={Tag}
+                      label="Formule"
+                      value={
+                        formula
+                          ? `${formula.nom} — ${formatPrice(
+                              formula.prix
+                            )}`
+                          : null
+                      }
+                    />
+
+                    <InfoItem
+                      icon={Calendar}
+                      label="Date de réabonnement"
+                      value={
+                        sub.date_reabonnement
+                          ? formatDate(
+                              sub.date_reabonnement
+                            )
+                          : null
+                      }
+                    />
+
+                    <InfoItem
+                      icon={Calendar}
+                      label="Date de fin"
+                      value={
+                        sub.date_fin
+                          ? formatDate(
+                              sub.date_fin
+                            )
+                          : null
+                      }
+                    />
+
+                    <InfoItem
+                      icon={FileText}
+                      label="VAD"
+                      value={sub.vad}
+                    />
+                  </div>
+
+                  {/* ============================
+                      HISTORIQUE
+                  ============================ */}
+
+                  {reabonnementsBySub[sub.id] &&
+                    reabonnementsBySub[sub.id].length >
+                      0 && (
+                      <div className="mt-4 pt-4 border-t border-slate-100">
+                        <div className="flex items-center gap-2 mb-3">
+                          <History className="h-4 w-4 text-slate-400" />
+
+                          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Historique des réabonnements (
+                            {
+                              reabonnementsBySub[
+                                sub.id
+                              ].length
+                            }
+                            )
+                          </h3>
                         </div>
-                      </td>
 
-                      <td className="px-4 py-3 text-slate-600">
-                        {client.telephone || '—'}
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-600">
-                        {subscription?.formula?.nom || '—'}
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-600">
-                        {subscription?.date_fin || '—'}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        {subscription ? (
-                          <StatusBadge
-                            dateFin={subscription.date_fin}
-                          />
-                        ) : (
-                          <span className="text-xs text-slate-400">
-                            Aucun abonnement
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          {onViewClient && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onViewClient(client.id)
-                              }
-                              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                              title="Voir"
+                        <div className="space-y-2">
+                          {reabonnementsBySub[
+                            sub.id
+                          ].map((r) => (
+                            <div
+                              key={r.id}
+                              className="flex items-center justify-between gap-3 bg-slate-50 rounded-md px-3 py-2"
                             >
-                              <Eye className="h-4 w-4" />
-                            </button>
-                          )}
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-slate-900">
+                                  {r.formula?.nom ??
+                                    '—'}
+                                </p>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleOpenEdit(client)
-                            }
-                            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                            title="Modifier"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
+                                <p className="text-xs text-slate-400">
+                                  {formatDate(
+                                    r.date_reabonnement
+                                  )}
+                                </p>
+                              </div>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setDeleteClient(client)
-                            }
-                            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600"
-                            title="Supprimer"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                              <span className="text-sm font-semibold text-slate-700 shrink-0">
+                                {formatPrice(
+                                  r.montant
+                                )}
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                      </div>
+                    )}
 
-        {!loading && filteredClients.length > 0 && (
-          <div className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
-            {filteredClients.length} client
-            {filteredClients.length > 1 ? 's' : ''}
+                  {/* ============================
+                      ACTIONS
+                  ============================ */}
+
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex justify-end">
+                    <button
+                      onClick={() =>
+                        setDeleteSubId(sub.id)
+                      }
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Supprimer
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Formulaire */}
-      <ClientForm
-        open={formOpen}
-        initialClient={
-          editingClient
-            ? {
-                nom_complet: editingClient.nom_complet,
-                telephone: editingClient.telephone ?? '',
-              }
-            : null
-        }
-        initialSubscription={
-          editingClient
-            ? (() => {
-                const subscription =
-                  getCurrentSubscription(editingClient);
+      {/* ============================
+          MODIFICATION ABONNEMENT
+      ============================ */}
 
-                return subscription
-                  ? {
-                      numero_abonne:
-                        subscription.numero_abonne ?? '',
-                      numero_carte:
-                        subscription.numero_carte ?? '',
-                      vad: subscription.vad ?? '',
-                      date_reabonnement:
-                        subscription.date_reabonnement ?? '',
-                      date_fin:
-                        subscription.date_fin ?? '',
-                      formula_id:
-                        subscription.formula_id ?? '',
-                    }
-                  : null;
-              })()
-            : null
-        }
-        onSubmit={handleSubmit}
+      <Modal
+        open={subFormOpen}
+        title="Modifier l'abonnement"
         onClose={() => {
-          setFormOpen(false);
-          setEditingClient(null);
+          if (!savingSub) {
+            setSubFormOpen(false);
+            setEditingSubId(null);
+            setSubError(null);
+          }
         }}
-      />
+      >
+        <form
+          onSubmit={handleSaveSub}
+          className="space-y-4"
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="N° abonné">
+              <input
+                type="text"
+                value={subForm.numero_abonne}
+                onChange={(e) =>
+                  setSubForm({
+                    ...subForm,
+                    numero_abonne:
+                      e.target.value,
+                  })
+                }
+                className={inputClass}
+              />
+            </Field>
 
-      {/* Confirmation suppression */}
+            <Field label="N° carte">
+              <input
+                type="text"
+                value={subForm.numero_carte}
+                onChange={(e) =>
+                  setSubForm({
+                    ...subForm,
+                    numero_carte:
+                      e.target.value,
+                  })
+                }
+                className={inputClass}
+              />
+            </Field>
+          </div>
+
+          <Field label="Formule">
+            <select
+              value={subForm.formula_id}
+              onChange={(e) =>
+                setSubForm({
+                  ...subForm,
+                  formula_id:
+                    e.target.value,
+                })
+              }
+              className={inputClass}
+            >
+              <option value="">
+                — Sélectionner —
+              </option>
+
+              {formulas.map((formula) => (
+                <option
+                  key={formula.id}
+                  value={formula.id}
+                >
+                  {formula.nom} —{' '}
+                  {formatPrice(formula.prix)}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Date de réabonnement">
+              <input
+                type="date"
+                value={
+                  subForm.date_reabonnement
+                }
+                onChange={(e) =>
+                  setSubForm({
+                    ...subForm,
+                    date_reabonnement:
+                      e.target.value,
+                  })
+                }
+                className={inputClass}
+              />
+            </Field>
+
+            <Field label="Date de fin">
+              <input
+                type="date"
+                value={subForm.date_fin}
+                onChange={(e) =>
+                  setSubForm({
+                    ...subForm,
+                    date_fin:
+                      e.target.value,
+                  })
+                }
+                className={inputClass}
+              />
+            </Field>
+          </div>
+
+          <Field label="VAD">
+            <input
+              type="text"
+              value={subForm.vad}
+              onChange={(e) =>
+                setSubForm({
+                  ...subForm,
+                  vad: e.target.value,
+                })
+              }
+              className={inputClass}
+              placeholder="Facultatif"
+            />
+          </Field>
+
+          {subError && (
+            <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+
+              <span>{subError}</span>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setSubFormOpen(false);
+                setEditingSubId(null);
+                setSubError(null);
+              }}
+              disabled={savingSub}
+              className="px-3 py-2 rounded-md text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+            >
+              Annuler
+            </button>
+
+            <button
+              type="submit"
+              disabled={savingSub}
+              className="px-3 py-2 rounded-md text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50"
+            >
+              {savingSub
+                ? 'Enregistrement…'
+                : 'Enregistrer'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ============================
+          CONFIRMATION SUPPRESSION
+      ============================ */}
+
       <ConfirmDialog
-        open={Boolean(deleteClient)}
-        title="Supprimer le client"
-        message={
-          deleteClient
-            ? `Voulez-vous vraiment supprimer ${deleteClient.nom_complet} ?`
-            : ''
-        }
+        open={!!deleteSubId}
+        title="Supprimer l'abonnement"
+        message="Voulez-vous vraiment supprimer cet abonnement ?"
         confirmLabel="Supprimer"
-        onConfirm={handleDelete}
-        onCancel={() => setDeleteClient(null)}
+        onConfirm={handleDeleteSub}
+        onCancel={() => setDeleteSubId(null)}
       />
     </div>
   );
 }
+
+/*
+ * ============================
+ * FIELD
+ * ============================
+ */
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-sm font-medium text-slate-700 mb-1">
+        {label}
+      </span>
+
+      {children}
+    </label>
+  );
+}
+
+/*
+ * ============================
+ * INFO ITEM
+ * ============================
+ */
+
+function InfoItem({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Phone;
+  label: string;
+  value: string | null | undefined;
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <Icon className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
+
+      <div className="min-w-0">
+        <p className="text-xs text-slate-400">
+          {label}
+        </p>
+
+        <p className="text-sm text-slate-900 truncate">
+          {value || '—'}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+const inputClass =
+  'w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-slate-900 focus:ring-1 focus:ring-slate-900 focus:outline-none';

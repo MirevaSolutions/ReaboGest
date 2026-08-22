@@ -15,7 +15,8 @@ import {
   TrendingUp,
   Calendar,
 } from 'lucide-react';
-import { supabase, type Reabonnement, type Formula } from '@/lib/supabase';
+import type { Reabonnement, Formula } from '@/lib/supabase';
+import { getStatistiquesData } from '@/services/statistiques.service';
 import { formatPrice, formatDate } from '@/lib/status';
 import { todayLocal } from '@/lib/date';
 import type { Column } from '@/lib/export';
@@ -46,25 +47,23 @@ export default function StatistiquesPage() {
   const [customEnd, setCustomEnd] = useState('');
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
+  setLoading(true);
 
-    const [reabResult, formResult] = await Promise.all([
-      supabase
-        .from('reabonnements')
-        .select('*')
-        .order('date_reabonnement', { ascending: true }),
+  try {
+    const { reabonnements, formulas } =
+      await getStatistiquesData();
 
-      supabase
-        .from('formulas')
-        .select('*')
-        .order('prix', { ascending: true }),
-    ]);
-
-    setReabonnements((reabResult.data ?? []) as Reabonnement[]);
-    setFormulas((formResult.data ?? []) as Formula[]);
-
+    setReabonnements(reabonnements);
+    setFormulas(formulas);
+  } catch (error) {
+    console.error(
+      'Erreur chargement statistiques:',
+      error
+    );
+  } finally {
     setLoading(false);
-  }, []);
+  }
+}, []);
 
   useEffect(() => {
     fetchData();

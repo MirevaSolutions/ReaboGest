@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Wallet, Plus, TrendingUp, TrendingDown, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { supabase, type MvolaTransaction } from '@/lib/supabase';
+import type { MvolaTransaction } from '@/lib/supabase';
+import {
+  getMvolaData,
+  createDepot,
+} from '@/services/mvola.service';
 import { formatDate, formatPrice } from '@/lib/status';
-import { getMvolaBalance, performDepot } from '@/lib/mvola';
 import { todayLocal } from '@/lib/date';
 import type { Column } from '@/lib/export';
 import Modal from '@/components/Modal';
@@ -30,18 +33,26 @@ export default function SoldePage() {
   }, [toast]);
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
-    const [s, { data }] = await Promise.all([
-      getMvolaBalance(),
-      supabase
-        .from('mvola_transactions')
-        .select('*')
-        .order('created_at', { ascending: false }),
-    ]);
-    setSolde(s);
-    setTransactions((data ?? []) as MvolaTransaction[]);
+  setLoading(true);
+
+  try {
+    const { solde, transactions } = await getMvolaData();
+
+    setSolde(solde);
+    setTransactions(transactions);
+  } catch (error) {
+    console.error('Erreur chargement MVola:', error);
+
+    setToast({
+      type: 'error',
+      msg: error instanceof Error
+        ? error.message
+        : 'Erreur lors du chargement des données MVola.',
+    });
+  } finally {
     setLoading(false);
-  }, []);
+  }
+}, []);
 
   useEffect(() => {
     fetchData();
@@ -56,28 +67,43 @@ export default function SoldePage() {
   };
 
   const handleDepot = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const montant = parseInt(depotMontant, 10);
-    if (isNaN(montant) || montant <= 0) {
-      setDepotError('Le montant doit être supérieur à 0.');
-      return;
-    }
-    setSubmitting(true);
-    setDepotError(null);
-    const result = await performDepot({
+  e.preventDefault();
+
+  const montant = parseInt(depotMontant, 10);
+
+  if (isNaN(montant) || montant <= 0) {
+    setDepotError('Le montant doit être supérieur à 0.');
+    return;
+  }
+
+  setSubmitting(true);
+  setDepotError(null);
+
+  try {
+    await createDepot({
       montant,
       dateTransaction: depotDate,
       description: depotDesc,
     });
-    if (result.success) {
-      setDepotOpen(false);
-      await fetchData();
-      setToast({ type: 'success', msg: 'Dépôt enregistré avec succès.' });
-    } else {
-      setDepotError(result.error ?? 'Une erreur est survenue.');
-    }
+
+    setDepotOpen(false);
+
+    await fetchData();
+
+    setToast({
+      type: 'success',
+      msg: 'Dépôt enregistré avec succès.',
+    });
+  } catch (error) {
+    setDepotError(
+      error instanceof Error
+        ? error.message
+        : 'Une erreur est survenue.'
+    );
+  } finally {
     setSubmitting(false);
-  };
+  }
+};
 
   return (
     <div>
