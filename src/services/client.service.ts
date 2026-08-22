@@ -42,6 +42,69 @@ export async function getActiveFormulas(): Promise<Formula[]> {
   return (data ?? []) as Formula[];
 }
 
+async function checkSubscriptionDuplicates(
+  subscriptionData: SubscriptionData,
+  excludeSubscriptionId?: string
+) {
+  const numeroAbonne =
+    subscriptionData.numero_abonne.trim();
+
+  const numeroCarte =
+    subscriptionData.numero_carte.trim();
+
+  if (numeroAbonne) {
+    let query = supabase
+      .from('subscriptions')
+      .select('id, client_id')
+      .eq('numero_abonne', numeroAbonne)
+      .limit(1);
+
+    if (excludeSubscriptionId) {
+      query = query.neq('id', excludeSubscriptionId);
+    }
+
+    const { data, error } = await query.maybeSingle();
+
+    if (error) {
+      throw new Error(
+        'Impossible de vérifier le numéro d’abonné.'
+      );
+    }
+
+    if (data) {
+      throw new Error(
+        `Le numéro d’abonné "${numeroAbonne}" est déjà utilisé.`
+      );
+    }
+  }
+
+  if (numeroCarte) {
+    let query = supabase
+      .from('subscriptions')
+      .select('id, client_id')
+      .eq('numero_carte', numeroCarte)
+      .limit(1);
+
+    if (excludeSubscriptionId) {
+      query = query.neq('id', excludeSubscriptionId);
+    }
+
+    const { data, error } = await query.maybeSingle();
+
+    if (error) {
+      throw new Error(
+        'Impossible de vérifier le numéro de carte.'
+      );
+    }
+
+    if (data) {
+      throw new Error(
+        `Le numéro de carte "${numeroCarte}" est déjà utilisé.`
+      );
+    }
+  }
+}
+
 export async function createClient(
   clientData: CreateClientData
 ) {
@@ -71,6 +134,8 @@ export async function createInitialSubscription(
   clientId: string,
   subscriptionData: SubscriptionData
 ) {
+  await checkSubscriptionDuplicates(subscriptionData);
+
   const { data, error } = await supabase
     .from('subscriptions')
     .insert({
@@ -130,6 +195,11 @@ export async function updateSubscription(
   subscriptionId: string,
   subscriptionData: SubscriptionData
 ) {
+  await checkSubscriptionDuplicates(
+    subscriptionData,
+    subscriptionId
+  );
+
   const { data, error } = await supabase
     .from('subscriptions')
     .update({
@@ -222,6 +292,10 @@ export async function registerClient(
     );
   }
 
+  await checkSubscriptionDuplicates(
+    subscriptionData
+  );
+
   const client = await createClient(
     clientData
   );
@@ -247,11 +321,6 @@ export async function registerClient(
     throw error;
   }
 
-  /*
-   * Lorsqu'un client est inscrit avec une formule
-   * et une date de réabonnement, on enregistre
-   * également l'opération financière.
-   */
   if (
     subscriptionData.formula_id &&
     subscriptionData.date_reabonnement &&
@@ -266,13 +335,6 @@ export async function registerClient(
     });
 
     if (!result.success) {
-      /*
-       * L'inscription du client et de l'abonnement
-       * a déjà été faite.
-       *
-       * On remonte l'erreur afin que l'interface
-       * puisse prévenir l'utilisateur.
-       */
       throw new Error(
         result.error ??
           'Solde MVola insuffisant pour l’abonnement.'
@@ -286,7 +348,10 @@ export async function registerClient(
     formula,
   };
 }
-export async function getClientDetail(clientId: string) {
+
+export async function getClientDetail(
+  clientId: string
+) {
   const { data, error } = await supabase
     .from('clients')
     .select('*, subscriptions(*, formula:formulas(*))')

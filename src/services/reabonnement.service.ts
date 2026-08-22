@@ -3,10 +3,16 @@ import {
   type ClientWithSubscriptions,
   type Formula,
 } from '@/lib/supabase';
+
 import {
   getMvolaBalance,
   performReabonnement,
 } from '@/lib/mvola';
+
+import {
+  todayLocal,
+  addOneDay,
+} from '@/lib/date';
 
 /**
  * Récupère tous les clients avec leurs abonnements.
@@ -50,21 +56,12 @@ export async function getCurrentMvolaBalance(): Promise<number> {
   return getMvolaBalance();
 }
 
-/**
- * Effectue un réabonnement.
- *
- * Cette opération gère la logique métier du réabonnement :
- * - mise à jour de l'abonnement
- * - enregistrement de l'opération financière
- * - diminution du solde MVola
- * - enregistrement de la recette
- */
+
 export async function reabonnerClient(params: {
   subscriptionId: string;
   formulaId: string;
   dateReabonnement: string;
   dateFin: string;
-  montant: number;
 }) {
   if (!params.subscriptionId) {
     throw new Error('Abonnement introuvable.');
@@ -75,22 +72,102 @@ export async function reabonnerClient(params: {
   }
 
   if (!params.dateReabonnement) {
-    throw new Error('La date de réabonnement est obligatoire.');
+    throw new Error(
+      'La date de réabonnement est obligatoire.'
+    );
   }
 
   if (!params.dateFin) {
-    throw new Error('La date de fin est obligatoire.');
+    throw new Error(
+      'La date de fin est obligatoire.'
+    );
   }
 
-  if (!Number.isFinite(params.montant) || params.montant < 0) {
-    throw new Error('Le montant est invalide.');
+  /*
+   * recupération de l'abonnement actuel.
+   */
+  const { data: subscription, error } = await supabase
+    .from('subscriptions')
+    .select('id, date_fin')
+    .eq('id', params.subscriptionId)
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
   }
 
+  if (!subscription) {
+    throw new Error('Abonnement introuvable.');
+  }
+
+  const today = todayLocal();
+
+  if (subscription.date_fin) {
+    const ancienneDateFin = subscription.date_fin;
+
+    const dateFinTime = new Date(
+      `${ancienneDateFin}T00:00:00`
+    ).getTime();
+
+    const todayTime = new Date(
+      `${today}T00:00:00`
+    ).getTime();
+
+    if (dateFinTime >= todayTime) {
+      const dateMinimum = addOneDay(
+        ancienneDateFin
+      );
+
+      if (
+        params.dateReabonnement < dateMinimum
+      ) {
+        throw new Error(
+          `Cet abonnement est encore actif. Le prochain réabonnement doit commencer à partir du ${dateMinimum}.`
+        );
+      }
+    }
+  } else {
+    
+    if (params.dateReabonnement < today) {
+      throw new Error(
+        'La date de réabonnement ne peut pas être dans le passé.'
+      );
+    }
+  }
+
+ 
+  const { data: formula, error: formulaError } =
+    await supabase
+      .from('formulas')
+      .select('*')
+      .eq('id', params.formulaId)
+      .eq('active', true)
+      .single();
+
+  if (formulaError) {
+    throw new Error(formulaError.message);
+  }
+
+  if (!formula) {
+    throw new Error(
+      'La formule sélectionnée est introuvable ou inactive.'
+    );
+  }
+
+  if (!Number.isFinite(formula.prix) || formula.prix < 0) {
+    throw new Error(
+      'Le prix de la formule est invalide.'
+    );
+  }
+
+  /*
+   * Le montant est TOUJOURS celui de la formule.
+   */
   return performReabonnement({
     subscriptionId: params.subscriptionId,
     formulaId: params.formulaId,
     dateReabonnement: params.dateReabonnement,
     dateFin: params.dateFin,
-    montant: params.montant,
+    montant: formula.prix,
   });
 }

@@ -32,6 +32,8 @@ import {
   type SubscriptionStatus,
 } from '@/lib/status';
 
+import { todayLocal, addOneMonth } from '@/lib/date';
+
 import type { Column } from '@/lib/export';
 
 import StatusBadge from '@/components/StatusBadge';
@@ -161,6 +163,9 @@ export default function ClientsPage({
     useState<ClientWithSubscriptions | null>(
       null
     );
+
+  const [newSubscriptionDefaults, setNewSubscriptionDefaults] =
+    useState<SubscriptionFormData | null>(null);
 
   const [deleteTarget, setDeleteTarget] =
     useState<ClientWithSubscriptions | null>(
@@ -301,7 +306,19 @@ export default function ClientsPage({
   );
 
   const handleAdd = () => {
+    const dateDebut = todayLocal();
+
     setEditingClient(null);
+
+    setNewSubscriptionDefaults({
+      numero_abonne: '',
+      numero_carte: '',
+      vad: '',
+      date_reabonnement: dateDebut,
+      date_fin: addOneMonth(dateDebut),
+      formula_id: '',
+    });
+
     setFormOpen(true);
   };
 
@@ -309,6 +326,7 @@ export default function ClientsPage({
     client: ClientWithSubscriptions
   ) => {
     setEditingClient(client);
+    setNewSubscriptionDefaults(null);
     setFormOpen(true);
   };
 
@@ -317,12 +335,6 @@ export default function ClientsPage({
     subData: SubscriptionFormData
   ) => {
     try {
-      /*
-       * ==========================
-       * MODIFICATION
-       * ==========================
-       */
-
       if (editingClient) {
         await updateClient(
           editingClient.id,
@@ -351,6 +363,7 @@ export default function ClientsPage({
 
         setFormOpen(false);
         setEditingClient(null);
+        setNewSubscriptionDefaults(null);
 
         await fetchClients();
 
@@ -362,20 +375,6 @@ export default function ClientsPage({
         return;
       }
 
-      /*
-       * ==========================
-       * NOUVELLE INSCRIPTION
-       * ==========================
-       *
-       * Le service s'occupe de :
-       *
-       * client
-       * +
-       * abonnement
-       * +
-       * opération d'abonnement
-       */
-
       await registerClient(
         clientData,
         subData,
@@ -384,6 +383,7 @@ export default function ClientsPage({
 
       setFormOpen(false);
       setEditingClient(null);
+      setNewSubscriptionDefaults(null);
 
       await fetchClients();
 
@@ -446,7 +446,6 @@ export default function ClientsPage({
 
   return (
     <div>
-      {/* Header */}
       <div className="flex flex-col gap-3 mb-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">
@@ -484,7 +483,6 @@ export default function ClientsPage({
         </div>
       </div>
 
-      {/* Toast */}
       {toast && (
         <div
           className={`fixed top-4 right-4 z-50 flex items-center gap-2 rounded-md px-3 py-2.5 text-sm shadow-lg ${
@@ -503,7 +501,6 @@ export default function ClientsPage({
         </div>
       )}
 
-      {/* Recherche */}
       <div className="relative mb-3">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
 
@@ -518,7 +515,6 @@ export default function ClientsPage({
         />
       </div>
 
-      {/* Filtres */}
       <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
         {filterLabels.map(
           (filter) => {
@@ -548,7 +544,6 @@ export default function ClientsPage({
         )}
       </div>
 
-      {/* Table desktop */}
       <div className="hidden md:block bg-white rounded-md border border-slate-200 overflow-hidden">
         <table className="w-full">
           <thead>
@@ -705,7 +700,6 @@ export default function ClientsPage({
         </table>
       </div>
 
-      {/* Cards mobile */}
       <div className="md:hidden space-y-2">
         {loading && (
           <p className="text-center text-sm text-slate-400 py-8">
@@ -840,9 +834,9 @@ export default function ClientsPage({
         })}
       </div>
 
-      {/* Formulaire */}
       <ClientForm
         open={formOpen}
+        formulas={formulas}
         initialClient={
           editingClient
             ? {
@@ -890,16 +884,16 @@ export default function ClientsPage({
                     .subscriptions[0]
                     .formula_id ?? '',
               }
-            : null
+            : newSubscriptionDefaults
         }
         onSubmit={handleSubmit}
         onClose={() => {
           setFormOpen(false);
           setEditingClient(null);
+          setNewSubscriptionDefaults(null);
         }}
       />
 
-      {/* Confirmation suppression */}
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         title="Supprimer le client"

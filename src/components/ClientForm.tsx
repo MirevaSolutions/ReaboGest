@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { supabase, type Formula } from '@/lib/supabase';
+import type { Formula } from '@/lib/supabase';
+import { addOneMonth, todayLocal } from '@/lib/date';
 
 export type ClientFormData = {
   nom_complet: string;
@@ -17,6 +18,7 @@ export type SubscriptionFormData = {
 
 type Props = {
   open: boolean;
+  formulas: Formula[];
   initialClient?: ClientFormData | null;
   initialSubscription?: SubscriptionFormData | null;
   onSubmit: (
@@ -28,13 +30,12 @@ type Props = {
 
 export default function ClientForm({
   open,
+  formulas,
   initialClient,
   initialSubscription,
   onSubmit,
   onClose,
 }: Props) {
-  const [formulas, setFormulas] = useState<Formula[]>([]);
-
   const [client, setClient] = useState<ClientFormData>({
     nom_complet: '',
     telephone: '',
@@ -44,8 +45,8 @@ export default function ClientForm({
     numero_abonne: '',
     numero_carte: '',
     vad: '',
-    date_reabonnement: '',
-    date_fin: '',
+    date_reabonnement: todayLocal(),
+    date_fin: addOneMonth(todayLocal()),
     formula_id: '',
   });
 
@@ -55,40 +56,27 @@ export default function ClientForm({
   useEffect(() => {
     if (!open) return;
 
-    supabase
-      .from('formulas')
-      .select('*')
-      .eq('active', true)
-      .order('prix', { ascending: true })
-      .then(({ data }) => {
-        if (data) {
-          setFormulas(data as Formula[]);
-        }
-      });
-  }, [open]);
+    const today = todayLocal();
 
-  useEffect(() => {
-    if (open) {
-      setClient(
-        initialClient ?? {
-          nom_complet: '',
-          telephone: '',
-        }
-      );
+    setClient(
+      initialClient ?? {
+        nom_complet: '',
+        telephone: '',
+      }
+    );
 
-      setSub(
-        initialSubscription ?? {
-          numero_abonne: '',
-          numero_carte: '',
-          vad: '',
-          date_reabonnement: '',
-          date_fin: '',
-          formula_id: '',
-        }
-      );
+    setSub(
+      initialSubscription ?? {
+        numero_abonne: '',
+        numero_carte: '',
+        vad: '',
+        date_reabonnement: today,
+        date_fin: addOneMonth(today),
+        formula_id: '',
+      }
+    );
 
-      setError(null);
-    }
+    setError(null);
   }, [open, initialClient, initialSubscription]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -159,7 +147,6 @@ export default function ClientForm({
           className="overflow-y-auto px-5 py-5"
         >
           <div className="space-y-6">
-
             {/* Informations personnelles */}
             <FormSection
               title="Informations personnelles"
@@ -208,7 +195,6 @@ export default function ClientForm({
               description="Informations liées au réabonnement du client."
             >
               <div className="space-y-4">
-
                 {/* Formule */}
                 <Field label="Formule">
                   <select

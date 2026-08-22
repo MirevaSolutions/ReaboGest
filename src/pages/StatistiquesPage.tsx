@@ -15,6 +15,7 @@ import {
   TrendingUp,
   Calendar,
 } from 'lucide-react';
+
 import type { Reabonnement, Formula } from '@/lib/supabase';
 import { getStatistiquesData } from '@/services/statistiques.service';
 import { formatPrice, formatDate } from '@/lib/status';
@@ -26,6 +27,13 @@ type Period = '7' | '30' | 'custom';
 
 type DailyRevenue = {
   date: string;
+  label: string;
+  revenu: number;
+  count: number;
+};
+
+type MonthlyRevenue = {
+  month: string;
   label: string;
   revenu: number;
   count: number;
@@ -47,31 +55,24 @@ export default function StatistiquesPage() {
   const [customEnd, setCustomEnd] = useState('');
 
   const fetchData = useCallback(async () => {
-  setLoading(true);
+    setLoading(true);
 
-  try {
-    const { reabonnements, formulas } =
-      await getStatistiquesData();
+    try {
+      const { reabonnements, formulas } =
+        await getStatistiquesData();
 
-    setReabonnements(reabonnements);
-    setFormulas(formulas);
-  } catch (error) {
-    console.error(
-      'Erreur chargement statistiques:',
-      error
-    );
-  } finally {
-    setLoading(false);
-  }
-}, []);
+      setReabonnements(reabonnements);
+      setFormulas(formulas);
+    } catch (error) {
+      console.error('Erreur chargement statistiques:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-
-  // ---------------------------------------------------------------------------
-  // Dates
-  // ---------------------------------------------------------------------------
 
   const today = useMemo(() => {
     const d = new Date();
@@ -112,11 +113,6 @@ export default function StatistiquesPage() {
   };
 
   const todayStr = todayLocal();
-  const yesterdayStr = toStr(yesterday);
-
-  // ---------------------------------------------------------------------------
-  // Chiffre d'affaires
-  // ---------------------------------------------------------------------------
 
   const ca = useMemo(() => {
     const sumInRange = (start: Date, end: Date) => {
@@ -148,10 +144,6 @@ export default function StatistiquesPage() {
     yearAgo,
   ]);
 
-  // ---------------------------------------------------------------------------
-  // Nombre de réabonnements
-  // ---------------------------------------------------------------------------
-
   const counts = useMemo(() => {
     const countInRange = (start: Date, end: Date) => {
       const startStr = toStr(start);
@@ -177,10 +169,6 @@ export default function StatistiquesPage() {
     monthAgo,
     yearAgo,
   ]);
-
-  // ---------------------------------------------------------------------------
-  // Données du graphique
-  // ---------------------------------------------------------------------------
 
   const chartData = useMemo((): DailyRevenue[] => {
     let start: Date;
@@ -245,9 +233,60 @@ export default function StatistiquesPage() {
     today,
   ]);
 
-  // ---------------------------------------------------------------------------
-  // Statistiques par formule
-  // ---------------------------------------------------------------------------
+  const monthlyData = useMemo((): MonthlyRevenue[] => {
+    const months: MonthlyRevenue[] = [];
+
+    const current = new Date(
+      today.getFullYear(),
+      today.getMonth() - 11,
+      1
+    );
+
+    for (let i = 0; i < 12; i++) {
+      const year = current.getFullYear();
+      const month = current.getMonth();
+
+      const monthStr = `${year}-${String(month + 1).padStart(2, '0')}`;
+
+      const monthReabs = reabonnements.filter((r) =>
+        r.date_reabonnement.startsWith(monthStr)
+      );
+
+      months.push({
+        month: monthStr,
+        label: current.toLocaleDateString('fr-FR', {
+          month: 'short',
+          year: '2-digit',
+        }),
+        revenu: monthReabs.reduce(
+          (sum, r) => sum + r.montant,
+          0
+        ),
+        count: monthReabs.length,
+      });
+
+      current.setMonth(current.getMonth() + 1);
+    }
+
+    return months;
+  }, [reabonnements, today]);
+
+  const monthlyTotals = useMemo(() => {
+    const revenu = monthlyData.reduce(
+      (sum, item) => sum + item.revenu,
+      0
+    );
+
+    const count = monthlyData.reduce(
+      (sum, item) => sum + item.count,
+      0
+    );
+
+    return {
+      revenu,
+      count,
+    };
+  }, [monthlyData]);
 
   const formulaStats = useMemo((): FormulaStat[] => {
     const map = new Map<string, FormulaStat>();
@@ -266,7 +305,9 @@ export default function StatistiquesPage() {
       if (!map.has(key)) {
         map.set(key, {
           formula: r.formula_id
-            ? formulas.find((f) => f.id === r.formula_id) ?? null
+            ? formulas.find(
+                (f) => f.id === r.formula_id
+              ) ?? null
             : null,
           count: 0,
           revenu: 0,
@@ -297,7 +338,9 @@ export default function StatistiquesPage() {
     {
       header: 'Formule',
       accessor: (r) =>
-        formulas.find((f) => f.id === r.formula_id)?.nom ?? '',
+        formulas.find(
+          (f) => f.id === r.formula_id
+        )?.nom ?? '',
     },
     {
       header: 'Montant',
@@ -305,17 +348,18 @@ export default function StatistiquesPage() {
     },
   ];
 
-  // ---------------------------------------------------------------------------
-  // UI
-  // ---------------------------------------------------------------------------
-
   return (
-    <div>
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-        <h1 className="text-xl font-semibold text-slate-900">
-          Statistiques
-        </h1>
+    <div className="text-slate-900">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+        <div>
+          <h1 className="text-lg font-semibold">
+            Statistiques
+          </h1>
+
+          <p className="text-xs text-slate-400 mt-0.5">
+            Suivi des revenus et des réabonnements
+          </p>
+        </div>
 
         <ExportMenu
           filename="statistiques-reabonnements"
@@ -326,197 +370,124 @@ export default function StatistiquesPage() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-sm text-slate-400">
+        <div className="py-10 text-center text-sm text-slate-400">
           Chargement…
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
+          <section className="rounded-lg border border-slate-200 bg-white p-4">
+            <SectionTitle
+              icon={<Banknote className="h-4 w-4" />}
+              title="Chiffre d'affaires"
+            />
 
-          {/* ---------------------------------------------------------------- */}
-          {/* Chiffre d'affaires */}
-          {/* ---------------------------------------------------------------- */}
-
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Banknote className="h-4 w-4 text-slate-400" />
-
-              <h2 className="text-sm font-semibold text-slate-900">
-                Chiffre d'affaires
-              </h2>
-            </div>
-
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
               <MetricCard
                 label="Aujourd'hui"
                 value={formatPrice(ca.today)}
               />
-
               <MetricCard
                 label="Hier"
                 value={formatPrice(ca.yesterday)}
               />
-
               <MetricCard
-                label="Cette semaine"
+                label="7 derniers jours"
                 value={formatPrice(ca.week)}
               />
-
               <MetricCard
-                label="Ce mois"
+                label="30 derniers jours"
                 value={formatPrice(ca.month)}
               />
-
               <MetricCard
-                label="Cette année"
+                label="12 derniers mois"
                 value={formatPrice(ca.year)}
               />
             </div>
-          </div>
+          </section>
 
-          {/* ---------------------------------------------------------------- */}
-          {/* Nombre de réabonnements */}
-          {/* ---------------------------------------------------------------- */}
+          <section className="rounded-lg border border-slate-200 bg-white p-4">
+            <SectionTitle
+              icon={<RefreshCw className="h-4 w-4" />}
+              title="Réabonnements"
+            />
 
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <RefreshCw className="h-4 w-4 text-slate-400" />
-
-              <h2 className="text-sm font-semibold text-slate-900">
-                Nombre de réabonnements
-              </h2>
-            </div>
-
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
               <MetricCard
                 label="Aujourd'hui"
                 value={String(counts.today)}
               />
-
               <MetricCard
-                label="Cette semaine"
+                label="7 derniers jours"
                 value={String(counts.week)}
               />
-
               <MetricCard
-                label="Ce mois"
+                label="30 derniers jours"
                 value={String(counts.month)}
               />
-
               <MetricCard
-                label="Cette année"
-                value={String(counts.year)}
+                label="12 derniers mois"
+                value={String(monthlyTotals.count)}
               />
             </div>
-          </div>
+          </section>
 
-          {/* ---------------------------------------------------------------- */}
-          {/* Évolution du revenu */}
-          {/* ---------------------------------------------------------------- */}
+          <section className="rounded-lg border border-slate-200 bg-white p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
+              <SectionTitle
+                icon={<TrendingUp className="h-4 w-4" />}
+                title="Évolution du revenu"
+              />
 
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-
-              <div className="flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-slate-400" />
-
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Évolution du revenu
-                </h2>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-
-                <button
-                  type="button"
-                  onClick={() => setPeriod('7')}
-                  className={`px-3 py-1.5 rounded-lg border text-xs transition-colors ${
-                    period === '7'
-                      ? 'bg-slate-900 text-white border-slate-900'
-                      : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  7 jours
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPeriod('30')}
-                  className={`px-3 py-1.5 rounded-lg border text-xs transition-colors ${
-                    period === '30'
-                      ? 'bg-slate-900 text-white border-slate-900'
-                      : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  30 jours
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPeriod('custom')}
-                  className={`px-3 py-1.5 rounded-lg border text-xs transition-colors ${
-                    period === 'custom'
-                      ? 'bg-slate-900 text-white border-slate-900'
-                      : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  Période
-                </button>
+              <div className="flex items-center gap-1">
+                {(['7', '30', 'custom'] as Period[]).map(
+                  (value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setPeriod(value)}
+                      className={`rounded-md border px-2.5 py-1 text-xs transition ${
+                        period === value
+                          ? 'border-slate-800 bg-slate-800 text-white'
+                          : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                      }`}
+                    >
+                      {value === '7'
+                        ? '7 jours'
+                        : value === '30'
+                          ? '30 jours'
+                          : 'Période'}
+                    </button>
+                  )
+                )}
               </div>
             </div>
 
-            {/* Période personnalisée */}
             {period === 'custom' && (
-              <div className="mb-4 flex flex-col sm:flex-row gap-3">
+              <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <DateInput
+                  label="Du"
+                  value={customStart}
+                  onChange={setCustomStart}
+                />
 
-                <div className="flex-1">
-                  <label className="block text-xs text-slate-500 mb-1">
-                    Du
-                  </label>
-
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-
-                    <input
-                      type="date"
-                      value={customStart}
-                      onChange={(e) =>
-                        setCustomStart(e.target.value)
-                      }
-                      className="w-full h-9 rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-700 outline-none focus:border-slate-400"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex-1">
-                  <label className="block text-xs text-slate-500 mb-1">
-                    Au
-                  </label>
-
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-
-                    <input
-                      type="date"
-                      value={customEnd}
-                      onChange={(e) =>
-                        setCustomEnd(e.target.value)
-                      }
-                      className="w-full h-9 rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-700 outline-none focus:border-slate-400"
-                    />
-                  </div>
-                </div>
-
+                <DateInput
+                  label="Au"
+                  value={customEnd}
+                  onChange={setCustomEnd}
+                />
               </div>
             )}
 
             {chartData.length === 0 ? (
-              <div className="text-center py-12 text-sm text-slate-400">
-                {period === 'custom'
-                  ? 'Sélectionnez une période pour afficher les données.'
-                  : 'Aucune donnée pour cette période.'}
-              </div>
+              <EmptyState
+                text={
+                  period === 'custom'
+                    ? 'Sélectionnez une période.'
+                    : 'Aucune donnée pour cette période.'
+                }
+              />
             ) : (
-              <div className="h-72 w-full">
+              <div className="h-56">
                 <ResponsiveContainer
                   width="100%"
                   height="100%"
@@ -524,9 +495,9 @@ export default function StatistiquesPage() {
                   <BarChart
                     data={chartData}
                     margin={{
-                      top: 10,
-                      right: 10,
-                      left: -10,
+                      top: 5,
+                      right: 5,
+                      left: -20,
                       bottom: 0,
                     }}
                   >
@@ -541,7 +512,7 @@ export default function StatistiquesPage() {
                       axisLine={false}
                       tickLine={false}
                       tick={{
-                        fontSize: 11,
+                        fontSize: 10,
                         fill: '#94a3b8',
                       }}
                     />
@@ -550,25 +521,15 @@ export default function StatistiquesPage() {
                       axisLine={false}
                       tickLine={false}
                       tick={{
-                        fontSize: 11,
+                        fontSize: 10,
                         fill: '#94a3b8',
                       }}
-                      tickFormatter={(value: number) => {
-                        if (value >= 1000000) {
-                          return `${(value / 1000000).toFixed(1)}M`;
-                        }
-
-                        if (value >= 1000) {
-                          return `${Math.round(value / 1000)}k`;
-                        }
-
-                        return String(value);
-                      }}
+                      tickFormatter={formatChartValue}
                     />
 
                     <Tooltip
                       cursor={{
-                        fill: '#f8fafc',
+                        fill: '#f1f5f9',
                       }}
                       formatter={(value: number) => [
                         formatPrice(value),
@@ -578,47 +539,140 @@ export default function StatistiquesPage() {
                         `Date : ${label}`
                       }
                       contentStyle={{
-                        borderRadius: '8px',
+                        borderRadius: '6px',
                         border: '1px solid #e2e8f0',
                         boxShadow:
                           '0 4px 12px rgba(15, 23, 42, 0.08)',
-                        fontSize: '12px',
+                        fontSize: '11px',
                       }}
                     />
 
                     <Bar
                       dataKey="revenu"
-                      fill="#334155"
-                      radius={[4, 4, 0, 0]}
-                      maxBarSize={40}
+                      fill="#1e293b"
+                      radius={[3, 3, 0, 0]}
+                      maxBarSize={32}
                     />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             )}
-          </div>
+          </section>
 
-          {/* ---------------------------------------------------------------- */}
-          {/* Formules */}
-          {/* ---------------------------------------------------------------- */}
+          <section className="rounded-lg border border-slate-200 bg-white p-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-3">
+              <SectionTitle
+                icon={<Calendar className="h-4 w-4" />}
+                title="Revenus par mois"
+              />
 
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-
-            <div className="flex items-center gap-2 mb-4">
-              <Tag className="h-4 w-4 text-slate-400" />
-
-              <h2 className="text-sm font-semibold text-slate-900">
-                Formules utilisées
-              </h2>
+              <div className="text-xs text-slate-400">
+                12 derniers mois
+              </div>
             </div>
 
-            {formulaStats.length === 0 ? (
-              <div className="text-center py-10 text-sm text-slate-400">
-                Aucune donnée disponible.
-              </div>
-            ) : (
-              <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-2 mb-3 sm:grid-cols-3">
+              <MetricCard
+                label="Revenu total"
+                value={formatPrice(monthlyTotals.revenu)}
+              />
 
+              <MetricCard
+                label="Réabonnements"
+                value={String(monthlyTotals.count)}
+              />
+
+              <MetricCard
+                label="Moyenne / mois"
+                value={formatPrice(
+                  monthlyTotals.revenu / 12
+                )}
+              />
+            </div>
+
+            <div className="h-56">
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+              >
+                <BarChart
+                  data={monthlyData}
+                  margin={{
+                    top: 5,
+                    right: 5,
+                    left: -20,
+                    bottom: 0,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke="#e2e8f0"
+                  />
+
+                  <XAxis
+                    dataKey="label"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{
+                      fontSize: 10,
+                      fill: '#94a3b8',
+                    }}
+                  />
+
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{
+                      fontSize: 10,
+                      fill: '#94a3b8',
+                    }}
+                    tickFormatter={formatChartValue}
+                  />
+
+                  <Tooltip
+                    cursor={{
+                      fill: '#f1f5f9',
+                    }}
+                    formatter={(value: number) => [
+                      formatPrice(value),
+                      'Revenu',
+                    ]}
+                    labelFormatter={(label: string) =>
+                      `Mois : ${label}`
+                    }
+                    contentStyle={{
+                      borderRadius: '6px',
+                      border: '1px solid #e2e8f0',
+                      boxShadow:
+                        '0 4px 12px rgba(15, 23, 42, 0.08)',
+                      fontSize: '11px',
+                    }}
+                  />
+
+                  <Bar
+                    dataKey="revenu"
+                    fill="#1e293b"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={34}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            
+          </section>
+
+          <section className="rounded-lg border border-slate-200 bg-white p-4">
+            <SectionTitle
+              icon={<Tag className="h-4 w-4" />}
+              title="Formules utilisées"
+            />
+
+            {formulaStats.length === 0 ? (
+              <EmptyState text="Aucune donnée disponible." />
+            ) : (
+              <div className="space-y-3">
                 {formulaStats.map((stat) => {
                   const percentage =
                     (stat.count / maxFormulaCount) * 100;
@@ -626,23 +680,22 @@ export default function StatistiquesPage() {
                   return (
                     <div
                       key={stat.formula?.id ?? 'unknown'}
-                      className="space-y-2"
+                      className="space-y-1.5"
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-
-                        <div>
-                          <p className="text-sm font-medium text-slate-800">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-medium text-slate-800">
                             {stat.formula?.nom ??
                               'Formule supprimée'}
                           </p>
 
-                          <p className="text-xs text-slate-400">
+                          <p className="text-[11px] text-slate-400">
                             {stat.count} réabonnement
                             {stat.count > 1 ? 's' : ''}
                           </p>
                         </div>
 
-                        <div className="flex items-center gap-4 text-xs">
+                        <div className="flex shrink-0 items-center gap-3 text-[11px]">
                           <span className="text-slate-500">
                             {formatPrice(stat.revenu)}
                           </span>
@@ -651,12 +704,11 @@ export default function StatistiquesPage() {
                             {stat.count}
                           </span>
                         </div>
-
                       </div>
 
-                      <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
                         <div
-                          className="h-full rounded-full bg-slate-400 transition-all"
+                          className="h-full rounded-full bg-slate-800 transition-all"
                           style={{
                             width: `${percentage}%`,
                           }}
@@ -665,20 +717,34 @@ export default function StatistiquesPage() {
                     </div>
                   );
                 })}
-
               </div>
             )}
-          </div>
-
+          </section>
         </div>
       )}
     </div>
   );
 }
 
-// -----------------------------------------------------------------------------
-// Carte métrique
-// -----------------------------------------------------------------------------
+function SectionTitle({
+  icon,
+  title,
+}: {
+  icon: React.ReactNode;
+  title: string;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-slate-500">
+        {icon}
+      </span>
+
+      <h2 className="text-sm font-semibold text-slate-800">
+        {title}
+      </h2>
+    </div>
+  );
+}
 
 function MetricCard({
   label,
@@ -688,14 +754,67 @@ function MetricCard({
   value: string;
 }) {
   return (
-    <div className="bg-slate-50 rounded-lg border border-slate-100 p-4">
-      <p className="text-xs text-slate-400 mb-2">
+    <div className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2.5">
+      <p className="text-[11px] text-slate-400">
         {label}
       </p>
 
-      <p className="text-base font-semibold text-slate-900 break-words">
+      <p className="mt-1 break-words text-sm font-semibold text-slate-800">
         {value}
       </p>
     </div>
   );
+}
+
+function DateInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[11px] text-slate-500">
+        {label}
+      </span>
+
+      <div className="relative">
+        <Calendar className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+
+        <input
+          type="date"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-8 w-full rounded-md border border-slate-200 bg-white pl-8 pr-2 text-xs text-slate-700 outline-none focus:border-slate-400"
+        />
+      </div>
+    </label>
+  );
+}
+
+function EmptyState({
+  text,
+}: {
+  text: string;
+}) {
+  return (
+    <div className="py-8 text-center text-xs text-slate-400">
+      {text}
+    </div>
+  );
+}
+
+function formatChartValue(value: number) {
+  if (value >= 1000000) {
+    return `${(value / 1000000).toFixed(1)}M`;
+  }
+
+  if (value >= 1000) {
+    return `${Math.round(value / 1000)}k`;
+  }
+
+  return String(value);
 }
