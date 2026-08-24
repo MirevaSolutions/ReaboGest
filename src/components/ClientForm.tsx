@@ -255,6 +255,7 @@ export default function ClientForm({
                       }
                       className={inputClass}
                       placeholder="Ex : 0123 4567 8901"
+                      required
                     />
                   </Field>
                 </div>

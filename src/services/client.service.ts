@@ -1,5 +1,8 @@
 import { supabase, type Formula } from '@/lib/supabase';
-import { performAbonnement } from '@/lib/mvola';
+import {
+  getMvolaBalance,
+  performAbonnement,
+} from '@/lib/mvola';
 
 export type CreateClientData = {
   nom_complet: string;
@@ -60,10 +63,14 @@ async function checkSubscriptionDuplicates(
       .limit(1);
 
     if (excludeSubscriptionId) {
-      query = query.neq('id', excludeSubscriptionId);
+      query = query.neq(
+        'id',
+        excludeSubscriptionId
+      );
     }
 
-    const { data, error } = await query.maybeSingle();
+    const { data, error } =
+      await query.maybeSingle();
 
     if (error) {
       throw new Error(
@@ -86,10 +93,14 @@ async function checkSubscriptionDuplicates(
       .limit(1);
 
     if (excludeSubscriptionId) {
-      query = query.neq('id', excludeSubscriptionId);
+      query = query.neq(
+        'id',
+        excludeSubscriptionId
+      );
     }
 
-    const { data, error } = await query.maybeSingle();
+    const { data, error } =
+      await query.maybeSingle();
 
     if (error) {
       throw new Error(
@@ -111,8 +122,10 @@ export async function createClient(
   const { data, error } = await supabase
     .from('clients')
     .insert({
-      nom_complet: clientData.nom_complet.trim(),
-      telephone: clientData.telephone.trim() || null,
+      nom_complet:
+        clientData.nom_complet.trim(),
+      telephone:
+        clientData.telephone.trim() || null,
     })
     .select()
     .single();
@@ -134,16 +147,20 @@ export async function createInitialSubscription(
   clientId: string,
   subscriptionData: SubscriptionData
 ) {
-  await checkSubscriptionDuplicates(subscriptionData);
+  await checkSubscriptionDuplicates(
+    subscriptionData
+  );
 
   const { data, error } = await supabase
     .from('subscriptions')
     .insert({
       client_id: clientId,
       numero_abonne:
-        subscriptionData.numero_abonne.trim() || null,
+        subscriptionData.numero_abonne.trim() ||
+        null,
       numero_carte:
-        subscriptionData.numero_carte.trim() || null,
+        subscriptionData.numero_carte.trim() ||
+        null,
       vad:
         subscriptionData.vad.trim() || null,
       date_reabonnement:
@@ -176,8 +193,10 @@ export async function updateClient(
   const { data, error } = await supabase
     .from('clients')
     .update({
-      nom_complet: clientData.nom_complet.trim(),
-      telephone: clientData.telephone.trim() || null,
+      nom_complet:
+        clientData.nom_complet.trim(),
+      telephone:
+        clientData.telephone.trim() || null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', clientId)
@@ -204,9 +223,11 @@ export async function updateSubscription(
     .from('subscriptions')
     .update({
       numero_abonne:
-        subscriptionData.numero_abonne.trim() || null,
+        subscriptionData.numero_abonne.trim() ||
+        null,
       numero_carte:
-        subscriptionData.numero_carte.trim() || null,
+        subscriptionData.numero_carte.trim() ||
+        null,
       vad:
         subscriptionData.vad.trim() || null,
       date_reabonnement:
@@ -275,11 +296,18 @@ export async function registerClient(
     );
   }
 
+
   if (!subscriptionData.formula_id) {
     throw new Error(
       'Veuillez sélectionner une formule.'
     );
   }
+
+  if (!subscriptionData.numero_carte.trim()) {
+  throw new Error(
+    'Le numéro de carte est obligatoire.'
+  );
+}
 
   const formula = formulas.find(
     (item) =>
@@ -292,9 +320,29 @@ export async function registerClient(
     );
   }
 
+  if (formula.prix <= 0) {
+    throw new Error(
+      'Le prix de la formule doit être supérieur à 0.'
+    );
+  }
+
   await checkSubscriptionDuplicates(
     subscriptionData
   );
+
+  if (!subscriptionData.date_reabonnement) {
+    throw new Error(
+      'La date de réabonnement est obligatoire.'
+    );
+  }
+
+  const solde = await getMvolaBalance();
+
+  if (solde < formula.prix) {
+    throw new Error(
+      `Solde MVola insuffisant. Solde actuel : ${solde} Ar, montant requis : ${formula.prix} Ar.`
+    );
+  }
 
   const client = await createClient(
     clientData
@@ -321,25 +369,32 @@ export async function registerClient(
     throw error;
   }
 
-  if (
-    subscriptionData.formula_id &&
-    subscriptionData.date_reabonnement &&
-    formula.prix > 0
-  ) {
-    const result = await performAbonnement({
-      subscriptionId: subscription.id,
-      formulaId: subscriptionData.formula_id,
-      dateReabonnement:
-        subscriptionData.date_reabonnement,
-      montant: formula.prix,
-    });
+  const result = await performAbonnement({
+    subscriptionId: subscription.id,
+    formulaId: subscriptionData.formula_id,
+    dateReabonnement:
+      subscriptionData.date_reabonnement,
+    montant: formula.prix,
+  });
 
-    if (!result.success) {
-      throw new Error(
-        result.error ??
-          'Solde MVola insuffisant pour l’abonnement.'
+  if (!result.success) {
+    try {
+      await deleteSubscription(
+        subscription.id
+      );
+
+      await deleteClient(client.id);
+    } catch (rollbackError) {
+      console.error(
+        'Erreur rollback après échec paiement:',
+        rollbackError
       );
     }
+
+    throw new Error(
+      result.error ??
+        'Solde MVola insuffisant pour l’abonnement.'
+    );
   }
 
   return {
@@ -354,7 +409,9 @@ export async function getClientDetail(
 ) {
   const { data, error } = await supabase
     .from('clients')
-    .select('*, subscriptions(*, formula:formulas(*))')
+    .select(
+      '*, subscriptions(*, formula:formulas(*))'
+    )
     .eq('id', clientId)
     .single();
 
