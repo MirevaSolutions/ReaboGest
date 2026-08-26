@@ -18,6 +18,32 @@ export type SubscriptionData = {
   formula_id: string;
 };
 
+function getTodayLocal(): string {
+  const date = new Date();
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+function calculateDateFin(dateReabonnement: string): string {
+  const date = new Date(`${dateReabonnement}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    throw new Error('Date de réabonnement invalide.');
+  }
+
+  date.setMonth(date.getMonth() + 1);
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
 export async function getClients() {
   const { data, error } = await supabase
     .from('clients')
@@ -151,6 +177,22 @@ export async function createInitialSubscription(
     subscriptionData
   );
 
+  if (!subscriptionData.numero_carte.trim()) {
+    throw new Error(
+      'Le numéro de carte est obligatoire.'
+    );
+  }
+
+  if (!subscriptionData.date_reabonnement) {
+    throw new Error(
+      'La date de réabonnement est obligatoire.'
+    );
+  }
+
+  const dateFin = calculateDateFin(
+    subscriptionData.date_reabonnement
+  );
+
   const { data, error } = await supabase
     .from('subscriptions')
     .insert({
@@ -159,14 +201,12 @@ export async function createInitialSubscription(
         subscriptionData.numero_abonne.trim() ||
         null,
       numero_carte:
-        subscriptionData.numero_carte.trim() ||
-        null,
+        subscriptionData.numero_carte.trim(),
       vad:
         subscriptionData.vad.trim() || null,
       date_reabonnement:
-        subscriptionData.date_reabonnement || null,
-      date_fin:
-        subscriptionData.date_fin || null,
+        subscriptionData.date_reabonnement,
+      date_fin: dateFin,
       formula_id:
         subscriptionData.formula_id || null,
     })
@@ -219,6 +259,22 @@ export async function updateSubscription(
     subscriptionId
   );
 
+  if (!subscriptionData.numero_carte.trim()) {
+    throw new Error(
+      'Le numéro de carte est obligatoire.'
+    );
+  }
+
+  if (!subscriptionData.date_reabonnement) {
+    throw new Error(
+      'La date de réabonnement est obligatoire.'
+    );
+  }
+
+  const dateFin = calculateDateFin(
+    subscriptionData.date_reabonnement
+  );
+
   const { data, error } = await supabase
     .from('subscriptions')
     .update({
@@ -226,14 +282,12 @@ export async function updateSubscription(
         subscriptionData.numero_abonne.trim() ||
         null,
       numero_carte:
-        subscriptionData.numero_carte.trim() ||
-        null,
+        subscriptionData.numero_carte.trim(),
       vad:
         subscriptionData.vad.trim() || null,
       date_reabonnement:
-        subscriptionData.date_reabonnement || null,
-      date_fin:
-        subscriptionData.date_fin || null,
+        subscriptionData.date_reabonnement,
+      date_fin: dateFin,
       formula_id:
         subscriptionData.formula_id || null,
       updated_at: new Date().toISOString(),
@@ -296,7 +350,6 @@ export async function registerClient(
     );
   }
 
-
   if (!subscriptionData.formula_id) {
     throw new Error(
       'Veuillez sélectionner une formule.'
@@ -304,10 +357,16 @@ export async function registerClient(
   }
 
   if (!subscriptionData.numero_carte.trim()) {
-  throw new Error(
-    'Le numéro de carte est obligatoire.'
-  );
-}
+    throw new Error(
+      'Le numéro de carte est obligatoire.'
+    );
+  }
+
+  if (!subscriptionData.date_reabonnement) {
+    throw new Error(
+      'La date de réabonnement est obligatoire.'
+    );
+  }
 
   const formula = formulas.find(
     (item) =>
@@ -330,19 +389,40 @@ export async function registerClient(
     subscriptionData
   );
 
-  if (!subscriptionData.date_reabonnement) {
+  const today = getTodayLocal();
+  const dateReabonnement =
+    subscriptionData.date_reabonnement;
+
+  if (dateReabonnement > today) {
     throw new Error(
-      'La date de réabonnement est obligatoire.'
+      'La date de réabonnement ne peut pas être dans le futur.'
     );
   }
 
-  const solde = await getMvolaBalance();
+  const isHistorical =
+    dateReabonnement < today;
 
-  if (solde < formula.prix) {
-    throw new Error(
-      `Solde MVola insuffisant. Solde actuel : ${solde} Ar, montant requis : ${formula.prix} Ar.`
-    );
+  const isToday =
+    dateReabonnement === today;
+
+  if (isToday) {
+    const solde = await getMvolaBalance();
+
+    if (solde < formula.prix) {
+      throw new Error(
+        `Solde MVola insuffisant. Solde actuel : ${solde} Ar, montant requis : ${formula.prix} Ar.`
+      );
+    }
   }
+
+  const dateFin = calculateDateFin(
+    dateReabonnement
+  );
+
+  const subscriptionDataWithDateFin = {
+    ...subscriptionData,
+    date_fin: dateFin,
+  };
 
   const client = await createClient(
     clientData
@@ -354,7 +434,7 @@ export async function registerClient(
     subscription =
       await createInitialSubscription(
         client.id,
-        subscriptionData
+        subscriptionDataWithDateFin
       );
   } catch (error) {
     try {
@@ -369,32 +449,65 @@ export async function registerClient(
     throw error;
   }
 
-  const result = await performAbonnement({
-    subscriptionId: subscription.id,
-    formulaId: subscriptionData.formula_id,
-    dateReabonnement:
-      subscriptionData.date_reabonnement,
-    montant: formula.prix,
-  });
+  if (isHistorical) {
+    const { error } = await supabase
+      .from('reabonnements')
+      .insert({
+        subscription_id: subscription.id,
+        formula_id:
+          subscriptionData.formula_id,
+        date_reabonnement:
+          dateReabonnement,
+        montant: formula.prix,
+      });
 
-  if (!result.success) {
-    try {
-      await deleteSubscription(
-        subscription.id
-      );
+    if (error) {
+      try {
+        await deleteSubscription(
+          subscription.id
+        );
 
-      await deleteClient(client.id);
-    } catch (rollbackError) {
-      console.error(
-        'Erreur rollback après échec paiement:',
-        rollbackError
+        await deleteClient(client.id);
+      } catch (rollbackError) {
+        console.error(
+          'Erreur rollback historique:',
+          rollbackError
+        );
+      }
+
+      throw new Error(error.message);
+    }
+  }
+
+  if (isToday) {
+    const result = await performAbonnement({
+      subscriptionId: subscription.id,
+      formulaId:
+        subscriptionData.formula_id,
+      dateReabonnement:
+        dateReabonnement,
+      montant: formula.prix,
+    });
+
+    if (!result.success) {
+      try {
+        await deleteSubscription(
+          subscription.id
+        );
+
+        await deleteClient(client.id);
+      } catch (rollbackError) {
+        console.error(
+          'Erreur rollback après échec paiement:',
+          rollbackError
+        );
+      }
+
+      throw new Error(
+        result.error ??
+          'Solde MVola insuffisant pour l’abonnement.'
       );
     }
-
-    throw new Error(
-      result.error ??
-        'Solde MVola insuffisant pour l’abonnement.'
-    );
   }
 
   return {
