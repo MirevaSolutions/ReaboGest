@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id       Int    @id @default(autoincrement())
+  nom      String
+  password String
+  email    String @unique
+}
+
+model Client {
+  id          Int    @id @default(autoincrement())
+  nomComplete String
+  telephone   String
+  adresse     String
+
+  abonnements Abonnement[]
+  achats      AchatProduit[]
+}
+
+model Abonnement {
+  id          Int      @id @default(autoincrement())
+  dateDebut   DateTime
+  dateFin     DateTime
+  formule     String
+  numeroCarte String
+  status      String
+
+  idPaiement Int
+  idClient   Int
+  idSolde    Int
+
+  paiement Paiement @relation(fields: [idPaiement], references: [id])
+  client   Client   @relation(fields: [idClient], references: [id])
+  solde    Solde    @relation(fields: [idSolde], references: [id])
+}
+
+model Solde {
+  id            Int      @id @default(autoincrement())
+  date          DateTime
+  montant       Decimal  @db.Decimal(12, 2)
+  description   String
+  formuleChoisi String
+
+  abonnements Abonnement[]
+}
+
+model Paiement {
+  id           Int      @id @default(autoincrement())
+  datePaiement DateTime
+  montant      Decimal  @db.Decimal(12, 2)
+  total        Decimal  @db.Decimal(12, 2)
+
+  abonnements Abonnement[]
+  prestations Prestation[]
+  achats      AchatProduit[]
+}
+
+model Prestation {
+  id           Int      @id @default(autoincrement())
+  libelle      String
+  prixUnitaire Decimal  @db.Decimal(12, 2)
+  dateCreation DateTime @default(now())
+  quantite     Int
+
+  idPaiement Int
+  paiement   Paiement @relation(fields: [idPaiement], references: [id])
+}
+
+model Depense {
+  id          Int     @id @default(autoincrement())
+  libelle     String
+  montant     Decimal @db.Decimal(12, 2)
+  description String
+}
+
+model Produit {
+  id          Int     @id @default(autoincrement())
+  nom         String
+  description String
+  prixAchat   Decimal @db.Decimal(12, 2)
+  prixDeVente Decimal @db.Decimal(12, 2)
+  quantite    Int
+  type        String
+
+  achats AchatProduit[]
+}
+
+model AchatProduit {
+  id           Int     @id @default(autoincrement())
+  quantite     Int
+  sousTotal    Decimal @db.Decimal(12, 2)
+  prixUnitaire Decimal @db.Decimal(12, 2)
+
+  idPaiement Int
+  idClient   Int
+  idProduit  Int
+
+  paiement Paiement @relation(fields: [idPaiement], references: [id])
+  client   Client   @relation(fields: [idClient], references: [id])
+  produit  Produit  @relation(fields: [idProduit], references: [id])
+}
